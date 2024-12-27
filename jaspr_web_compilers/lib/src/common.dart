@@ -26,7 +26,7 @@ final webSdkDir = (() {
     output = jsonDecode(result.stdout as String) as Map;
   } catch (e) {
     throw UnsupportedError('Could not find flutter web sdk. '
-        'Calling "flutter doctor" resulted in: "result.stdout". '
+        'Calling "flutter doctor" resulted in: "${result.stdout}". '
         'Make sure flutter is installed and setup correctly. '
         'If you think this is a bug, open an issue at https://github.com/schultek/jaspr/issues');
   }
