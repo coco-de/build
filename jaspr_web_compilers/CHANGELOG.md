@@ -1,3 +1,17 @@
+## 4.1.0
+
+- Support package:archive version 4.x.
+- Allow analyzer version 7.x.
+- Bump the min sdk to 3.6.0.
+
+## 4.1.0-beta.3
+
+- Support 3.7.0 pre-release sdks.
+
+## 4.1.0-beta.2
+
+- Add source maps for dart2wasm builds.
+
 ## 4.1.0-beta.1
 
 - Fix loading compiled modules from subdirectories.

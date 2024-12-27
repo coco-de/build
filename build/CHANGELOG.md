@@ -1,8 +1,10 @@
-## 2.4.2-wip
+## 2.4.2
 
-- Bump the min sdk to 3.5.0.
+- Bump the min sdk to 3.6.0.
 - Remove some unnecessary casts and non-null assertions now that we have private
   field promotion.
+- Require analyzer ^6.9.0, allow <8.0.0.
+- Fix analyzer deprecations.
 
 ## 2.4.1
 

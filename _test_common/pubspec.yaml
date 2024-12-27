@@ -4,7 +4,7 @@ description: Test infra for writing build tests. Is not published.
 resolution: workspace
 
 environment:
-  sdk: ^3.5.0
+  sdk: ^3.6.0
 
 dependencies:
   build: any
@@ -19,3 +19,6 @@ dependencies:
   test: ^1.16.0
   test_descriptor: ^2.0.0
   watcher: ^1.0.0
+
+dev_dependencies:
+  dart_flutter_team_lints: ^3.1.0

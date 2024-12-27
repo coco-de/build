@@ -1,6 +1,12 @@
-## 5.0.10-wip
+## 5.0.10
+
+- Bump the min sdk to 3.6.0.
+- Support analyzer version 7.x.
+
+## 5.0.10-beta.0
 
 - Bump the min sdk to 3.5.0.
+- Support 3.7.0 pre-release sdks.
 
 ## 5.0.9
 

@@ -35,7 +35,7 @@ builders:
         - lib/web_plugin_registrant.dart
     build_to: cache
     auto_apply: root_package
-    runs_before: [ "jaspr_web_compilers:entrypoint_bootstrap" ]
+    runs_before: ["jaspr_web_compilers:entrypoint_bootstrap"]
   dart2js_modules:
     import: "package:jaspr_web_compilers/builders.dart"
     builder_factories:
@@ -143,6 +143,7 @@ builders:
         - .digests
         - .dart.ddc_merged_metadata
         - .wasm
+        - .wasm.map
         - .mjs
     required_inputs:
       - .bootstrap.dart
@@ -168,7 +169,7 @@ builders:
   _stack_trace_mapper_copy:
     import: "tool/copy_builder.dart"
     builder_factories:
-        - copyBuilder
+      - copyBuilder
     build_extensions:
       web/stack_trace_mapper.dart.js:
         - lib/src/dev_compiler_stack_trace/stack_trace_mapper.dart.js
