@@ -17,11 +17,11 @@ workspace:
 - build_runner
 - build_runner_core
 - build_test
-- build_web_compilers
+- jaspr_web_compilers
 - example
 - scratch_space
 - tool
 - build_modules/test/fixtures/a
 - build_modules/test/fixtures/b
-- build_web_compilers/test/fixtures/c
-- build_web_compilers/test/fixtures/d
+- jaspr_web_compilers/test/fixtures/c
+- jaspr_web_compilers/test/fixtures/d
