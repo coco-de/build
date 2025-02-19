@@ -1,3 +1,7 @@
+## 5.0.11
+
+- Support 3.8.0 pre-release sdks.
+
 ## 5.0.10
 
 - Bump the min sdk to 3.6.0.

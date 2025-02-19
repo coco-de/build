@@ -137,7 +137,8 @@ Future<void> runPrerequisites(Map<String, Object> assets) async {
   // It is necessary to add a fake asset so that the jaspr_web_compilers
   // package exists.
   var sdkAssets = <String, Object>{'jaspr_web_compilers|fake.txt': ''};
-  await testBuilderAndCollectAssets(sdkJsCopy(null), sdkAssets);
+  await testBuilderAndCollectAssets(
+      sdkJsCopy(const BuilderOptions({})), sdkAssets);
   assets.addAll(sdkAssets);
 
   await testBuilderAndCollectAssets(const ModuleLibraryBuilder(), assets);

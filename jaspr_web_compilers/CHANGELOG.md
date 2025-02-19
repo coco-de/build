@@ -1,3 +1,7 @@
+## 4.1.1
+
+- Support 3.8.0 pre-release sdks.
+
 ## 4.1.0
 
 - Support package:archive version 4.x.
