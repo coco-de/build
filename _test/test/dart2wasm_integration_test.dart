@@ -36,9 +36,9 @@ void main() {
         usePrecompiled: true,
         buildArgs: [
           '--define',
-          'build_web_compilers:entrypoint=compiler=dart2wasm',
+          'jaspr_web_compilers:entrypoint=compiler=dart2wasm',
           '--define',
-          'build_web_compilers:entrypoint=dart2wasm_args='
+          'jaspr_web_compilers:entrypoint=dart2wasm_args='
               '["--enable-asserts", "-E--enable-experimental-ffi"]',
           '--output=${d.sandbox}',
         ],

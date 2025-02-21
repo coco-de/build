@@ -98,7 +98,7 @@ void main() {
       final dartSource =
           File(p.join('build', 'web', 'packages', '_test', 'app.dart'));
       await runBuild(trailingArgs: [
-        '--define=build_web_compilers:dart_source_cleanup=enabled=true',
+        '--define=jaspr_web_compilers:dart_source_cleanup=enabled=true',
         '--output',
         'build'
       ]);

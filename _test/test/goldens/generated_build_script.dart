@@ -3,7 +3,7 @@
 // ignore_for_file: no_leading_underscores_for_library_prefixes
 import 'package:build_runner_core/build_runner_core.dart' as _i1;
 import 'package:provides_builder/builders.dart' as _i2;
-import 'package:build_web_compilers/builders.dart' as _i3;
+import 'package:jaspr_web_compilers/builders.dart' as _i3;
 import 'package:build_test/builder.dart' as _i4;
 import 'package:build_config/build_config.dart' as _i5;
 import 'package:build_modules/builders.dart' as _i6;
@@ -34,10 +34,9 @@ final _builders = <_i1.BuilderApplication>[
     appliesBuilders: const [r'provides_builder:some_post_process_builder'],
   ),
   _i1.apply(
-    r'build_web_compilers:sdk_js',
+    r'jaspr_web_compilers:sdk_js',
     [
-      _i3.sdkJsCompile,
-      _i3.sdkJsCopyRequirejs,
+      _i3.sdkJsCopy,
     ],
     _i1.toNoneByDefault(),
     isOptional: true,
@@ -66,7 +65,7 @@ final _builders = <_i1.BuilderApplication>[
     appliesBuilders: const [r'build_modules:module_cleanup'],
   ),
   _i1.apply(
-    r'build_web_compilers:ddc_modules',
+    r'jaspr_web_compilers:ddc_modules',
     [
       _i3.ddcMetaModuleBuilder,
       _i3.ddcMetaModuleCleanBuilder,
@@ -78,7 +77,7 @@ final _builders = <_i1.BuilderApplication>[
     appliesBuilders: const [r'build_modules:module_cleanup'],
   ),
   _i1.apply(
-    r'build_web_compilers:ddc',
+    r'jaspr_web_compilers:ddc',
     [
       _i3.ddcKernelBuilder,
       _i3.ddcBuilder,
@@ -87,14 +86,14 @@ final _builders = <_i1.BuilderApplication>[
     isOptional: true,
     hideOutput: true,
     appliesBuilders: const [
-      r'build_web_compilers:ddc_modules',
-      r'build_web_compilers:dart2js_modules',
-      r'build_web_compilers:dart2wasm_modules',
-      r'build_web_compilers:dart_source_cleanup',
+      r'jaspr_web_compilers:ddc_modules',
+      r'jaspr_web_compilers:dart2js_modules',
+      r'jaspr_web_compilers:dart2wasm_modules',
+      r'jaspr_web_compilers:dart_source_cleanup',
     ],
   ),
   _i1.apply(
-    r'build_web_compilers:dart2wasm_modules',
+    r'jaspr_web_compilers:dart2wasm_modules',
     [
       _i3.dart2wasmMetaModuleBuilder,
       _i3.dart2wasmMetaModuleCleanBuilder,
@@ -106,7 +105,7 @@ final _builders = <_i1.BuilderApplication>[
     appliesBuilders: const [r'build_modules:module_cleanup'],
   ),
   _i1.apply(
-    r'build_web_compilers:dart2js_modules',
+    r'jaspr_web_compilers:dart2js_modules',
     [
       _i3.dart2jsMetaModuleBuilder,
       _i3.dart2jsMetaModuleCleanBuilder,
@@ -118,7 +117,7 @@ final _builders = <_i1.BuilderApplication>[
     appliesBuilders: const [r'build_modules:module_cleanup'],
   ),
   _i1.apply(
-    r'build_web_compilers:entrypoint',
+    r'jaspr_web_compilers:entrypoint',
     [_i3.webEntrypointBuilder],
     _i1.toRoot(),
     hideOutput: true,
@@ -143,7 +142,7 @@ final _builders = <_i1.BuilderApplication>[
     }),
     defaultReleaseOptions:
         const _i7.BuilderOptions(<String, dynamic>{r'compiler': r'dart2js'}),
-    appliesBuilders: const [r'build_web_compilers:dart2js_archive_extractor'],
+    appliesBuilders: const [r'jaspr_web_compilers:dart2js_archive_extractor'],
   ),
   _i1.apply(
     r'build_resolvers:transitive_digests',
@@ -162,13 +161,13 @@ final _builders = <_i1.BuilderApplication>[
     _i8.transitiveDigestCleanup,
   ),
   _i1.applyPostProcess(
-    r'build_web_compilers:dart2js_archive_extractor',
+    r'jaspr_web_compilers:dart2js_archive_extractor',
     _i3.dart2jsArchiveExtractor,
     defaultReleaseOptions:
         const _i7.BuilderOptions(<String, dynamic>{r'filter_outputs': true}),
   ),
   _i1.applyPostProcess(
-    r'build_web_compilers:dart_source_cleanup',
+    r'jaspr_web_compilers:dart_source_cleanup',
     _i3.dartSourceCleanup,
     defaultReleaseOptions:
         const _i7.BuilderOptions(<String, dynamic>{r'enabled': true}),

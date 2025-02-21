@@ -1,7 +1,7 @@
 targets:
   $default:
     builders:
-      build_web_compilers:entrypoint:
+      jaspr_web_compilers:entrypoint:
         generate_for:
           - web/main.dart
           - web/sub/main.dart

@@ -35,9 +35,9 @@ void main() {
     test('via --define flag', () async {
       await expectTestsPass(usePrecompiled: true, buildArgs: [
         '--define',
-        'build_web_compilers:entrypoint=compiler=dart2js',
+        'jaspr_web_compilers:entrypoint=compiler=dart2js',
         '--define',
-        'build_web_compilers:entrypoint=dart2js_args=["--minify"]',
+        'jaspr_web_compilers:entrypoint=dart2js_args=["--minify"]',
         '--output=$_outputDir',
       ]);
       await _expectWasCompiledWithDart2JS(minified: true);
@@ -56,9 +56,9 @@ void main() {
         '--config',
         'dart2js',
         '--define',
-        'build_web_compilers:entrypoint=compiler=dart2js',
+        'jaspr_web_compilers:entrypoint=compiler=dart2js',
         '--define',
-        'build_web_compilers:entrypoint=dart2js_args=["--minify"]',
+        'jaspr_web_compilers:entrypoint=dart2js_args=["--minify"]',
         '--output=$_outputDir',
       ]);
       await _expectWasCompiledWithDart2JS(minified: true);

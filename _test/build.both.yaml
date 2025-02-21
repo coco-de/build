@@ -1,7 +1,7 @@
 targets:
   $default:
     builders:
-      build_web_compilers:entrypoint:
+      jaspr_web_compilers:entrypoint:
         options:
           compilers:
             dart2wasm:

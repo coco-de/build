@@ -4,7 +4,7 @@ targets:
       provides_builder:some_post_process_builder:
         options:
           default_content: goodbye
-      build_web_compilers:entrypoint:
+      jaspr_web_compilers:entrypoint:
         generate_for:
           - web/main.dart
           - web/sub/main.dart
