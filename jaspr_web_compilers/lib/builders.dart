@@ -55,14 +55,15 @@ Builder ddcKernelBuilder(BuilderOptions options) {
   _ensureSameDdcOptions(options);
 
   return KernelBuilder(
-      summaryOnly: true,
-      platformSdk: webSdkDir,
-      sdkKernelPath: p.url.join('kernel', 'ddc_outline_sound.dill'),
-      outputExtension: ddcKernelExtension,
-      platform: ddcPlatform,
-      useIncrementalCompiler: _readUseIncrementalCompilerOption(options),
-      librariesPath: p.join(webSdkDir, 'libraries.json'),
-      trackUnusedInputs: _readTrackInputsCompilerOption(options));
+    summaryOnly: true,
+    platformSdk: webSdkDir,
+    sdkKernelPath: p.url.join('kernel', 'ddc_outline_sound.dill'),
+    outputExtension: ddcKernelExtension,
+    platform: ddcPlatform,
+    useIncrementalCompiler: _readUseIncrementalCompilerOption(options),
+    librariesPath: p.join(webSdkDir, 'libraries.json'),
+    trackUnusedInputs: _readTrackInputsCompilerOption(options),
+  );
 }
 
 Builder sdkJsCopy(BuilderOptions _) => SdkJsCopyBuilder();
@@ -88,23 +89,33 @@ Builder dart2wasmModuleBuilder(BuilderOptions _) =>
 // General purpose builders
 PostProcessBuilder dartSourceCleanup(BuilderOptions options) =>
     (options.config['enabled'] as bool? ?? false)
-        ? const FileDeletingBuilder(
-            ['.dart', '.js.map', '.ddc.js.metadata', '.ddc_merged_metadata'])
-        : const FileDeletingBuilder(
-            ['.dart', '.js.map', '.ddc.js.metadata', '.ddc_merged_metadata'],
-            isEnabled: false);
+        ? const FileDeletingBuilder([
+          '.dart',
+          '.js.map',
+          '.ddc.js.metadata',
+          '.ddc_merged_metadata',
+        ])
+        : const FileDeletingBuilder([
+          '.dart',
+          '.js.map',
+          '.ddc.js.metadata',
+          '.ddc_merged_metadata',
+        ], isEnabled: false);
 
 /// Throws if it is ever given different options.
 void _ensureSameDdcOptions(BuilderOptions options) {
   if (_previousDdcConfig != null) {
-    if (!const MapEquality<String, Object?>()
-        .equals(_previousDdcConfig, options.config)) {
+    if (!const MapEquality<String, Object?>().equals(
+      _previousDdcConfig,
+      options.config,
+    )) {
       throw ArgumentError(
-          'The jaspr_web_compilers:ddc builder must have the same '
-          'configuration in all packages. Saw $_previousDdcConfig and '
-          '${options.config} which are not equal.\n\n '
-          'Please use the `global_options` section in '
-          '`build.yaml` or the `--define` flag to set global options.');
+        'The jaspr_web_compilers:ddc builder must have the same '
+        'configuration in all packages. Saw $_previousDdcConfig and '
+        '${options.config} which are not equal.\n\n '
+        'Please use the `global_options` section in '
+        '`build.yaml` or the `--define` flag to set global options.',
+      );
     }
   } else {
     _previousDdcConfig = options.config;

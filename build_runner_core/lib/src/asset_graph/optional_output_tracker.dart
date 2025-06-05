@@ -3,9 +3,9 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import 'package:build/build.dart';
-import '../../build_runner_core.dart';
 
-import '../generate/phase.dart';
+import '../../build_runner_core.dart';
+import '../generate/build_phases.dart';
 import '../package_graph/target_graph.dart';
 import '../util/build_dirs.dart';
 import 'graph.dart';
@@ -29,16 +29,22 @@ import 'node.dart';
 /// Non-required optional output might still exist in the generated directory
 /// and the asset graph but we should avoid serving them, outputting them in
 /// the merged directories, or considering a failed output as an overall.
+// TODO(davidmorgan): can this be removed?
 class OptionalOutputTracker {
   final _checkedOutputs = <AssetId, bool>{};
   final AssetGraph _assetGraph;
   final TargetGraph _targetGraph;
   final Set<String> _buildDirs;
   final Set<BuildFilter> _buildFilters;
-  final List<BuildPhase> _buildPhases;
+  final BuildPhases _buildPhases;
 
-  OptionalOutputTracker(this._assetGraph, this._targetGraph, this._buildDirs,
-      this._buildFilters, this._buildPhases);
+  OptionalOutputTracker(
+    this._assetGraph,
+    this._targetGraph,
+    this._buildDirs,
+    this._buildFilters,
+    this._buildPhases,
+  );
 
   /// Returns whether [output] is required.
   ///
@@ -51,26 +57,36 @@ class OptionalOutputTracker {
     if (currentlyChecking.contains(output)) return false;
     currentlyChecking.add(output);
 
-    final node = _assetGraph.get(output);
-    if (node is! GeneratedAssetNode) return true;
-    final phase = _buildPhases[node.phaseNumber];
+    final node = _assetGraph.get(output)!;
+    if (node.type != NodeType.generated) return true;
+    final nodeConfiguration = node.generatedNodeConfiguration!;
+    final phase = _buildPhases[nodeConfiguration.phaseNumber];
     if (!phase.isOptional &&
-        shouldBuildForDirs(output,
-            buildDirs: _buildDirs,
-            buildFilters: _buildFilters,
-            phase: phase,
-            targetGraph: _targetGraph)) {
+        shouldBuildForDirs(
+          output,
+          buildDirs: _buildDirs,
+          buildFilters: _buildFilters,
+          phase: phase,
+          targetGraph: _targetGraph,
+        )) {
       return true;
     }
     return _checkedOutputs.putIfAbsent(
-        output,
-        () =>
-            node.outputs.any((o) => isRequired(o, currentlyChecking)) ||
-            _assetGraph
-                .outputsForPhase(output.package, node.phaseNumber)
-                .where((n) => n.primaryInput == node.primaryInput)
-                .map((n) => n.id)
-                .any((o) => isRequired(o, currentlyChecking)));
+      output,
+      () =>
+          (_assetGraph.computeOutputs()[node.id] ?? <AssetId>{}).any(
+            (o) => isRequired(o, currentlyChecking),
+          ) ||
+          _assetGraph
+              .outputsForPhase(output.package, nodeConfiguration.phaseNumber)
+              .where(
+                (n) =>
+                    n.generatedNodeConfiguration!.primaryInput ==
+                    node.generatedNodeConfiguration!.primaryInput,
+              )
+              .map((n) => n.id)
+              .any((o) => isRequired(o, currentlyChecking)),
+    );
   }
 
   /// Clears the cache of which assets were required.

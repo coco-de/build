@@ -11,8 +11,8 @@ import 'package:stack_trace/stack_trace.dart';
 
 void Function(LogRecord) stdIOLogListener({bool? assumeTty, bool? verbose}) =>
     (record) => overrideAnsiOutput(assumeTty == true || ansiOutputEnabled, () {
-          _stdIOLogListener(record, verbose: verbose ?? false);
-        });
+      _stdIOLogListener(record, verbose: verbose ?? false);
+    });
 
 StringBuffer colorLog(LogRecord record, {required bool verbose}) {
   AnsiCode color;
@@ -26,7 +26,7 @@ StringBuffer colorLog(LogRecord record, {required bool verbose}) {
   final level = color.wrap('[${record.level}]');
   final eraseLine = ansiOutputEnabled && !verbose ? '\x1b[2K\r' : '';
   var lines = <Object>[
-    '$eraseLine$level ${_recordHeader(record, verbose)}${record.message}'
+    '$eraseLine$level ${_recordHeader(record)}${record.message}',
   ];
 
   if (record.error != null) {
@@ -38,8 +38,10 @@ StringBuffer colorLog(LogRecord record, {required bool verbose}) {
     const buildSystem = {'build_runner', 'build_runner_core', 'build'};
     if (trace.frames.isNotEmpty &&
         !buildSystem.contains(trace.frames.first.package)) {
-      trace =
-          trace.foldFrames((f) => buildSystem.contains(f.package), terse: true);
+      trace = trace.foldFrames(
+        (f) => buildSystem.contains(f.package),
+        terse: true,
+      );
     }
     lines.add(trace);
   }
@@ -62,9 +64,9 @@ void _stdIOLogListener(LogRecord record, {required bool verbose}) =>
 
 /// Filter out the Logger names which aren't coming from specific builders and
 /// splits the header for levels >= WARNING.
-String _recordHeader(LogRecord record, bool verbose) {
+String _recordHeader(LogRecord record) {
   var maybeSplit = record.level >= Level.WARNING ? '\n' : '';
-  return verbose || record.loggerName.contains(' ')
+  return record.loggerName.contains(' ')
       ? '${record.loggerName}:$maybeSplit'
       : '';
 }

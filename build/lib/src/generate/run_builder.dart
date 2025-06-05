@@ -3,6 +3,10 @@
 // BSD-style license that can be found in the LICENSE file.
 import 'dart:isolate';
 
+// ignore: implementation_imports
+import 'package:build_runner_core/src/generate/build_step_impl.dart';
+// ignore: implementation_imports
+import 'package:build_runner_core/src/generate/single_step_reader_writer.dart';
 import 'package:logging/logging.dart';
 import 'package:package_config/package_config.dart';
 
@@ -11,7 +15,6 @@ import '../asset/id.dart';
 import '../asset/reader.dart';
 import '../asset/writer.dart';
 import '../builder/build_step.dart';
-import '../builder/build_step_impl.dart';
 import '../builder/builder.dart';
 import '../builder/logging.dart';
 import '../resource/resource.dart';
@@ -34,14 +37,14 @@ import 'expected_outputs.dart';
 Future<void> runBuilder(
   Builder builder,
   Iterable<AssetId> inputs,
-  AssetReader reader,
-  AssetWriter writer,
+  AssetReader assetReader,
+  AssetWriter assetWriter,
   Resolvers? resolvers, {
   Logger? logger,
   ResourceManager? resourceManager,
   StageTracker stageTracker = NoOpStageTracker.instance,
   void Function(AssetId input, Iterable<AssetId> assets)?
-      reportUnusedAssetsForInput,
+  reportUnusedAssetsForInput,
   PackageConfig? packageConfig,
 }) async {
   var shouldDisposeResourceManager = resourceManager == null;
@@ -59,8 +62,9 @@ Future<void> runBuilder(
 
       if (uri == null) {
         throw UnsupportedError(
-            'Isolate running the build does not have a package config and no '
-            'fallback has been provided');
+          'Isolate running the build does not have a package config and no '
+          'fallback has been provided',
+        );
       }
 
       config = await loadPackageConfigUri(uri);
@@ -74,11 +78,23 @@ Future<void> runBuilder(
     var outputs = expectedOutputs(builder, input);
     if (outputs.isEmpty) return;
     var buildStep = BuildStepImpl(
-        input, outputs, reader, writer, resolvers, resources, loadPackageConfig,
-        stageTracker: stageTracker,
-        reportUnusedAssets: reportUnusedAssetsForInput == null
-            ? null
-            : (assets) => reportUnusedAssetsForInput(input, assets));
+      input,
+      outputs,
+      // If there a build running, `assetReader` and `assetWriter` are already a
+      // `SingleStepReaderWriter` instance integrated with the build; the `from`
+      // factory just passes it through.
+      //
+      // If there is no build running, this creates a fake build step.
+      SingleStepReaderWriter.from(reader: assetReader, writer: assetWriter),
+      resolvers,
+      resources,
+      loadPackageConfig,
+      stageTracker: stageTracker,
+      reportUnusedAssets:
+          reportUnusedAssetsForInput == null
+              ? null
+              : (assets) => reportUnusedAssetsForInput(input, assets),
+    );
     try {
       await builder.build(buildStep);
     } finally {
@@ -110,11 +126,8 @@ extension on Package {
 
 extension on PackageConfig {
   PackageConfig transformToAssetUris() {
-    return PackageConfig(
-      [
-        for (final package in packages) package.transformToAssetUris(),
-      ],
-      extraData: extraData,
-    );
+    return PackageConfig([
+      for (final package in packages) package.transformToAssetUris(),
+    ], extraData: extraData);
   }
 }

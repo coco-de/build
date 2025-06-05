@@ -1,3 +1,21 @@
+## 4.1.5
+
+- Remove dependency on the deprecated `package:js`.
+
+## 4.1.4
+
+- Allow Dart SDK 3.8.x and 3.9 prerelease.
+
+## 4.1.3
+
+- Fixed WebAssembly detection logic.
+
+## 4.1.2
+
+- Bump the min SDK to 3.7.0.
+- Use `build_test` 3.0.0.
+- Use support-detection scripts emitted by `dart2wasm`.
+
 ## 4.1.1
 
 - Support 3.8.0 pre-release sdks.

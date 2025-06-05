@@ -1,11 +1,12 @@
 name: build_workspace     # Can be anything
 environment:
-  sdk: ^3.6.0
+  sdk: ^3.7.0
 publish_to: none
 dev_dependencies:
   dart_flutter_team_lints: ^3.1.0
 
 workspace:
+- _benchmark
 - _test
 - _test/pkgs/provides_builder
 - _test_common

@@ -43,15 +43,19 @@ void main() {
       expect(reader.findAssets(Glob('test/*.dart')), emitsThrough(thisFile));
     });
 
-    test('should be able to use `findAssets` for files in non-root packages',
-        () {
-      expect(reader.findAssets(Glob('lib/*.dart'), package: 'build'),
-          emitsThrough(buildAsset));
-    });
+    test(
+      'should be able to use `findAssets` for files in non-root packages',
+      () {
+        expect(
+          reader.findAssets(Glob('lib/*.dart'), package: 'build'),
+          emitsThrough(buildAsset),
+        );
+      },
+    );
   });
 
   group('PackageAssetReader.forPackage', () {
-    AssetReader reader;
+    PackageAssetReader reader;
 
     final exampleLibA = 'test/_libs/example_a/';
     final exampleLibB = 'test/_libs/example_b/';

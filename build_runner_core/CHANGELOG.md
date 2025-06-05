@@ -1,3 +1,42 @@
+## 9.0.0-wip
+
+- Breaking: refactor `OverridableEnvironment` and `IOEnvironment` into
+  `BuildEnvironment`
+- Breaking: add `deleteDirectory` to `RunnerAssetWriter`, make `delete`
+  return `Future<void>`, remove deprecated `OnDelete`.
+- Bump the min SDK to 3.7.0.
+- Fix crash when running on assets ending in a dot.
+- Start using `package:build/src/internal.dart'.
+- Use `build_test` 3.0.0.
+- Refactor `PathProvidingAssetReader` to `AssetPathProvider`.
+- Refactor `MultiPackageAssetReader` to internal `AssetFinder`.
+- `FinalizedReader` no longer implements `AssetReader`.
+- Add internal `Filesystem` that backs `AssetReader` and `AssetWriter`
+  implementations.
+- Refactor `CachingAssetReader` to `FilesystemCache`.
+- Refactor `BuildCacheReader` to `GeneratedAssetHider`.
+- Refactor `FileBasedAssetReader` and `FileBasedAssetWriter` to `ReaderWriter`.
+- Move `BuildStepImpl` to `build_runner_core`, use `SingleStepReader` directly.
+- Remove `BuildCacheWriter`, functionality is handled by `AssetPathProvider`.
+- Refactor `SingleStepReader` to `SingleStepReaderWriter`, incorporating
+  `AssetWriterSpy` functionality.
+- Add `NodeType` to `AssetNode`, remove subtypes. Make mutations explicit.
+- Use `built_value` for `AssetNode` and related types, and for serialization.
+- Add details of what changed and what is built to `--verbose` logging.
+- New change detection algorithm.
+- Add `reportUnusedAssetsForInput` to `BuildOptions`, to listen for when
+  a builder notifies that an asset is unused.
+- Use `LibraryCycleGraphLoader` to load transitive deps for analysis.
+- Track post process builder outputs separately from the main graph Instead of
+  in `postProcessAnchor` nodes.
+- Compute outputs as needed instead of storing them in the asset graph.
+- Check build options for changes in the phase setup instead of storing them
+  in the asset graph.
+- Refactor invalidation to track current build progress in `Build` instead of
+  in the asset graph.
+- Track resolver dependencies as library cycle graphs.
+- Ignore deprecated analyzer API usages.
+
 ## 8.0.0
 
 - __Breaking__: Add `completeBuild` to `RunnerAssetWriter`, a method expected

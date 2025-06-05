@@ -2,291 +2,331 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import 'dart:collection';
 import 'dart:convert';
 
-import 'package:build/build.dart';
+import 'package:build/build.dart' hide Builder;
+import 'package:built_collection/built_collection.dart';
+import 'package:built_value/built_value.dart';
+import 'package:built_value/serializer.dart';
 import 'package:crypto/crypto.dart';
-import 'package:glob/glob.dart';
 
-import '../generate/phase.dart';
+import 'post_process_build_step_id.dart';
+
+part 'node.g.dart';
+
+/// Types of [AssetNode].
+class NodeType extends EnumClass {
+  static Serializer<NodeType> get serializer => _$nodeTypeSerializer;
+
+  static const NodeType generated = _$generated;
+  static const NodeType glob = _$glob;
+  static const NodeType internal = _$internal;
+  static const NodeType placeholder = _$placeholder;
+  static const NodeType source = _$source;
+  static const NodeType missingSource = _$missingSource;
+
+  const NodeType._(super.name);
+
+  static BuiltSet<NodeType> get values => _$nodeTypeValues;
+  static NodeType valueOf(String name) => _$nodeTypeValueOf(name);
+}
 
 /// A node in the asset graph which may be an input to other assets.
-abstract class AssetNode {
-  final AssetId id;
+abstract class AssetNode implements Built<AssetNode, AssetNodeBuilder> {
+  static Serializer<AssetNode> get serializer => _$assetNodeSerializer;
+
+  AssetId get id;
+  NodeType get type;
+
+  /// Additional node configuration for an [AssetNode.generated].
+  GeneratedNodeConfiguration? get generatedNodeConfiguration;
+
+  /// Additional node state that changes during the build for an
+  /// [AssetNode.generated].
+  GeneratedNodeState? get generatedNodeState;
+
+  /// Additional node configuration for an [AssetNode.glob].
+  GlobNodeConfiguration? get globNodeConfiguration;
+
+  /// Additional node state that changes during the build for an
+  /// [AssetNode.glob].
+  GlobNodeState? get globNodeState;
 
   /// The assets that any [Builder] in the build graph declares it may output
   /// when run on this asset.
-  final Set<AssetId> primaryOutputs = <AssetId>{};
+  // TODO(davidmorgan): remove and compute when needed?
+  BuiltSet<AssetId> get primaryOutputs;
 
-  /// The [AssetId]s of all generated assets which are output by a [Builder]
-  /// which reads this asset.
-  final Set<AssetId> outputs = <AssetId>{};
-
-  /// The [AssetId]s of all [PostProcessAnchorNode] assets for which this node
-  /// is the primary input.
-  final Set<AssetId> anchorOutputs = <AssetId>{};
-
-  /// The [Digest] for this node in its last known state.
+  /// The [Digest] for this node.
   ///
-  /// May be `null` if this asset has no outputs, or if it doesn't actually
-  /// exist.
-  Digest? lastKnownDigest;
-
-  /// Whether or not this node was an output of this build.
-  bool get isGenerated => false;
-
-  /// Whether or not this asset type can be read.
+  /// For source files, this is computed when the file is read so it can be used
+  /// to check for changes in the next build.
   ///
-  /// This does not indicate whether or not this specific node actually exists
-  /// at this moment in time.
-  bool get isReadable => true;
+  /// For generated files, it's computed and set when the file is output, at the
+  /// same time comparing with any previous value to check if the output has
+  /// changed since the previous build. Here, `null` means "not output".
+  ///
+  /// For globs, it's computed and set when the glob is evaluated, at the same
+  /// time comparing with any previous value to check if the glob results have
+  /// changed.
+  ///
+  /// For other node types, `null`.
+  Digest? get digest;
 
-  /// The IDs of the [PostProcessAnchorNode] for post process builder which
-  /// requested to delete this asset.
-  final Set<AssetId> deletedBy = <AssetId>{};
+  /// The `PostProcessBuildStep`s which requested to delete this asset.
+  BuiltSet<PostProcessBuildStepId> get deletedBy;
+
+  /// Whether this asset is a normal, readable file.
+  ///
+  /// Does not guarantee that the file currently exists.
+  bool get isFile =>
+      type == NodeType.generated ||
+      type == NodeType.source ||
+      type == NodeType.internal;
+
+  /// Whether this node is tracked as an input in the asset graph.
+  ///
+  /// [NodeType.internal] nodes are a dependency of _all_ builders, so they are
+  /// inputs but not tracked inputs.
+  bool get isTrackedInput =>
+      type == NodeType.generated ||
+      type == NodeType.source ||
+      type == NodeType.placeholder;
 
   /// Whether the node is deleted.
   ///
   /// Deleted nodes are ignored in the final merge step and watch handlers.
   bool get isDeleted => deletedBy.isNotEmpty;
 
-  /// Whether or not this node can be read by a builder as a primary or
-  /// secondary input.
+  /// Whether changes to this node will have any effect on other nodes.
+  bool get changesRequireRebuild =>
+      type == NodeType.internal || type == NodeType.glob || digest != null;
+
+  factory AssetNode([void Function(AssetNodeBuilder) updates]) = _$AssetNode;
+
+  /// An internal asset.
   ///
-  /// Some nodes are valid primary inputs but are not readable (see
-  /// [PlaceHolderAssetNode]), while others are readable in the overall build
-  /// system  but are not valid builder inputs (see [InternalAssetNode]).
-  bool get isValidInput => true;
-
-  /// Whether or not changes to this node will have any effect on other nodes.
+  /// Examples: `build_runner` generated entrypoint, package config.
   ///
-  /// Be default, if we haven't computed a digest for this asset and it has no
-  /// outputs, then it isn't interesting.
+  /// They are "inputs" to the entire build, so they are never explicitly
+  /// tracked as inputs.
+  factory AssetNode.internal(AssetId id) => AssetNode((b) {
+    b.id = id;
+    b.type = NodeType.internal;
+  });
+
+  /// A manually-written source file.
+  factory AssetNode.source(
+    AssetId id, {
+    Digest? digest,
+    Iterable<AssetId>? outputs,
+    Iterable<AssetId>? primaryOutputs,
+  }) => AssetNode((b) {
+    b.id = id;
+    b.type = NodeType.source;
+    b.primaryOutputs.replace(primaryOutputs ?? {});
+    b.digest = digest;
+  });
+
+  /// A missing source file.
   ///
-  /// Checking for a digest alone isn't enough because a file may be deleted
-  /// and re-added, in which case it won't have a digest.
-  bool get isInteresting => outputs.isNotEmpty || lastKnownDigest != null;
+  /// Created when a builder tries to read a non-existent file.
+  ///
+  /// If later the file does exist, the builder must be rerun as it can
+  /// produce different output.
+  factory AssetNode.missingSource(AssetId id) => AssetNode((b) {
+    b.id = id;
+    b.type = NodeType.missingSource;
+  });
 
-  AssetNode(this.id, {this.lastKnownDigest});
+  /// Placeholders for useful parts of packages.
+  ///
+  /// Four types of placeholder are used per package: the `lib` folder, the
+  /// `test` folder, the `web` folder, and the whole package.
+  ///
+  /// TODO(davidmorgan): describe how these are used.
+  factory AssetNode.placeholder(AssetId id) => AssetNode((b) {
+    b.id = id;
+    b.type = NodeType.placeholder;
+  });
 
-  /// Work around issue where you can't mixin classes into a class with optional
-  /// constructor args.
-  AssetNode._forMixins(this.id);
+  /// A generated node.
+  factory AssetNode.generated(
+    AssetId id, {
+    Digest? digest,
+    required AssetId primaryInput,
+    required int phaseNumber,
+    required bool isHidden,
+    Iterable<AssetId>? inputs,
+    bool? result,
+  }) => AssetNode((b) {
+    b.id = id;
+    b.type = NodeType.generated;
+    b.generatedNodeConfiguration.primaryInput = primaryInput;
+    b.generatedNodeConfiguration.phaseNumber = phaseNumber;
+    b.generatedNodeConfiguration.isHidden = isHidden;
+    b.generatedNodeState.inputs.replace(inputs ?? []);
+    b.generatedNodeState.result = result;
+    b.digest = digest;
+  });
 
-  /// Work around issue where you can't mixin classes into a class with optional
-  /// constructor args, this one includes the digest.
-  AssetNode._forMixinsWithDigest(this.id, this.lastKnownDigest);
+  /// A glob node.
+  factory AssetNode.glob(
+    AssetId id, {
+    required String glob,
+    required int phaseNumber,
+    Iterable<AssetId>? inputs,
+    List<AssetId>? results,
+  }) => AssetNode((b) {
+    b.id = id;
+    b.type = NodeType.glob;
+    b.globNodeConfiguration.glob = glob;
+    b.globNodeConfiguration.phaseNumber = phaseNumber;
+    b.globNodeState.results.replace(results ?? []);
+  });
 
-  @override
-  String toString() => 'AssetNode: $id';
+  static AssetId createGlobNodeId(String package, String glob, int phaseNum) =>
+      AssetId(package, 'glob.$phaseNum.${base64.encode(utf8.encode(glob))}');
+
+  AssetNode._() {
+    // Check that configuration and state fields are non-null exactly when the
+    // node is of the corresponding type.
+
+    void check(bool hasType, bool hasConfiguration, [bool? hasState]) {
+      if (hasType != hasConfiguration) {
+        throw ArgumentError(
+          'Node configuration does not match its type: $this',
+        );
+      }
+      if (hasState != null && hasType != hasState) {
+        throw ArgumentError('Node state does not match its type: $this');
+      }
+    }
+
+    check(
+      type == NodeType.generated,
+      generatedNodeConfiguration != null,
+      generatedNodeState != null,
+    );
+    check(
+      type == NodeType.glob,
+      globNodeConfiguration != null,
+      globNodeState != null,
+    );
+  }
+
+  /// The generated node inputs, or the glob node inputs, or `null` if the node
+  /// is not of one of those two types.
+  BuiltSet<AssetId>? get inputs {
+    switch (type) {
+      case NodeType.generated:
+        return generatedNodeState!.inputs;
+      case NodeType.glob:
+        return globNodeState!.inputs;
+      default:
+        return null;
+    }
+  }
+
+  /// Whether this is a generated node that was written when the generator ran.
+  ///
+  /// A file can be output by a failing generator, check
+  /// `generatedNodeState.result` for whether the generator succeeded.
+  bool get wasOutput => type == NodeType.generated && digest != null;
 }
 
-/// A node representing some internal asset.
-///
-/// These nodes are not used as primary inputs, but they are tracked in the
-/// asset graph and are readable.
-class InternalAssetNode extends AssetNode {
-  // These don't have [outputs] but they are interesting regardless.
-  @override
-  bool get isInteresting => true;
-
-  @override
-  bool get isValidInput => false;
-
-  InternalAssetNode(super.id, {super.lastKnownDigest});
-
-  @override
-  String toString() => 'InternalAssetNode: $id';
-}
-
-/// A node which is an original source asset (not generated).
-class SourceAssetNode extends AssetNode {
-  SourceAssetNode(super.id, {super.lastKnownDigest});
-
-  @override
-  String toString() => 'SourceAssetNode: $id';
-}
-
-/// States for nodes that can be invalidated.
-enum NodeState {
-  // This node does not need an update, and no checks need to be performed.
-  upToDate,
-  // This node may need an update, the inputs hash should be checked for
-  // changes.
-  mayNeedUpdate,
-  // This node definitely needs an update, the inputs hash check can be skipped.
-  definitelyNeedsUpdate,
-}
-
-/// A generated node in the asset graph.
-class GeneratedAssetNode extends AssetNode implements NodeWithInputs {
-  @override
-  bool get isGenerated => true;
-
-  @override
-  final int phaseNumber;
+/// Additional configuration for an [AssetNode.generated].
+abstract class GeneratedNodeConfiguration
+    implements
+        Built<GeneratedNodeConfiguration, GeneratedNodeConfigurationBuilder> {
+  static Serializer<GeneratedNodeConfiguration> get serializer =>
+      _$generatedNodeConfigurationSerializer;
 
   /// The primary input which generated this node.
-  final AssetId primaryInput;
+  AssetId get primaryInput;
 
-  @override
-  NodeState state;
+  /// The phase in which this node is generated.
+  ///
+  /// The generator that produces this node can only read files from earlier
+  /// phases plus any files it writes itself.
+  ///
+  /// Other generators and globs can only read this node if they run in a
+  /// later phase.
+  int get phaseNumber;
 
-  /// Whether the asset was actually output.
-  bool wasOutput;
+  /// Whether the asset should be placed in the build cache.
+  bool get isHidden;
+
+  factory GeneratedNodeConfiguration(
+    void Function(GeneratedNodeConfigurationBuilder) updates,
+  ) = _$GeneratedNodeConfiguration;
+
+  GeneratedNodeConfiguration._();
+}
+
+/// State for an [AssetNode.generated] that changes during the build.
+abstract class GeneratedNodeState
+    implements Built<GeneratedNodeState, GeneratedNodeStateBuilder> {
+  static Serializer<GeneratedNodeState> get serializer =>
+      _$generatedNodeStateSerializer;
 
   /// All the inputs that were read when generating this asset, or deciding not
   /// to generate it.
+  BuiltSet<AssetId> get inputs;
+
+  /// Entrypoints used for resolution with the analyzer.
+  BuiltSet<AssetId> get resolverEntrypoints;
+
+  /// Whether the generation succeded, or `null` if it did not run.
   ///
-  /// This needs to be an ordered set because we compute combined input digests
-  /// using this later on.
-  @override
-  HashSet<AssetId> inputs;
-
-  /// A digest combining all digests of all previous inputs.
+  /// A full build can complete with `null` results if there are optional
+  /// outputs that are not depended on by required outputs.
   ///
-  /// Used to determine whether all the inputs to a build step are identical to
-  /// the previous run, indicating that the previous output is still valid.
-  Digest? previousInputsDigest;
+  /// Generation can succeed without writing the output: see
+  /// [AssetNode.wasOutput].
+  bool? get result;
 
-  /// Whether the action which did or would produce this node failed.
-  bool isFailure;
+  factory GeneratedNodeState(void Function(GeneratedNodeStateBuilder) updates) =
+      _$GeneratedNodeState;
 
-  /// The [AssetId] of the node representing the [BuilderOptions] used to create
-  /// this node.
-  final AssetId builderOptionsId;
-
-  /// Whether the asset should be placed in the build cache.
-  final bool isHidden;
-
-  GeneratedAssetNode(
-    super.id, {
-    super.lastKnownDigest,
-    Iterable<AssetId>? inputs,
-    this.previousInputsDigest,
-    required this.isHidden,
-    required this.state,
-    required this.phaseNumber,
-    required this.wasOutput,
-    required this.isFailure,
-    required this.primaryInput,
-    required this.builderOptionsId,
-  }) : inputs = inputs != null ? HashSet.from(inputs) : HashSet();
-
-  @override
-  String toString() =>
-      'GeneratedAssetNode: $id generated from input $primaryInput.';
+  GeneratedNodeState._();
 }
 
-/// A node which is not a generated or source asset.
-///
-/// These are typically not readable or valid as inputs.
-mixin _SyntheticAssetNode implements AssetNode {
-  @override
-  bool get isReadable => false;
+/// Additional configuration for an [AssetNode.glob].
+abstract class GlobNodeConfiguration
+    implements Built<GlobNodeConfiguration, GlobNodeConfigurationBuilder> {
+  static Serializer<GlobNodeConfiguration> get serializer =>
+      _$globNodeConfigurationSerializer;
 
-  @override
-  bool get isValidInput => false;
+  String get glob;
+  int get phaseNumber;
+
+  factory GlobNodeConfiguration(
+    void Function(GlobNodeConfigurationBuilder) updates,
+  ) = _$GlobNodeConfiguration;
+
+  GlobNodeConfiguration._();
 }
 
-/// A [_SyntheticAssetNode] representing a non-existent source.
-///
-/// Typically these are created as a result of `canRead` calls for assets that
-/// don't exist in the graph. We still need to set up proper dependencies so
-/// that if that asset gets added later the outputs are properly invalidated.
-class SyntheticSourceAssetNode extends AssetNode with _SyntheticAssetNode {
-  SyntheticSourceAssetNode(super.id) : super._forMixins();
-}
+/// State for an [AssetNode.glob] that changes during the build.
+abstract class GlobNodeState
+    implements Built<GlobNodeState, GlobNodeStateBuilder> {
+  static Serializer<GlobNodeState> get serializer => _$globNodeStateSerializer;
 
-/// A [_SyntheticAssetNode] which represents an individual [BuilderOptions]
-/// object.
-///
-/// These are used to track the state of a [BuilderOptions] object, and all
-/// [GeneratedAssetNode]s should depend on one of these nodes, which represents
-/// their configuration.
-class BuilderOptionsAssetNode extends AssetNode with _SyntheticAssetNode {
-  BuilderOptionsAssetNode(super.id, Digest super.lastKnownDigest)
-      : super._forMixinsWithDigest();
-
-  @override
-  String toString() => 'BuildOptionsAssetNode: $id';
-}
-
-/// Placeholder assets are magic files that are usable as inputs but are not
-/// readable.
-class PlaceHolderAssetNode extends AssetNode with _SyntheticAssetNode {
-  @override
-  bool get isValidInput => true;
-
-  PlaceHolderAssetNode(super.id) : super._forMixins();
-
-  @override
-  String toString() => 'PlaceHolderAssetNode: $id';
-}
-
-/// A [_SyntheticAssetNode] which is created for each [primaryInput] to a
-/// [PostBuildAction].
-///
-/// The [outputs] of this node are the individual outputs created for the
-/// [primaryInput] during the [PostBuildAction] at index [actionNumber].
-class PostProcessAnchorNode extends AssetNode with _SyntheticAssetNode {
-  final int actionNumber;
-  final AssetId builderOptionsId;
-  final AssetId primaryInput;
-  Digest? previousInputsDigest;
-
-  PostProcessAnchorNode(
-      super.id, this.primaryInput, this.actionNumber, this.builderOptionsId,
-      {this.previousInputsDigest})
-      : super._forMixins();
-
-  PostProcessAnchorNode.forInputAndAction(
-      AssetId primaryInput, int actionNumber, AssetId builderOptionsId)
-      : this(primaryInput.addExtension('.post_anchor.$actionNumber'),
-            primaryInput, actionNumber, builderOptionsId);
-}
-
-/// A node representing a glob ran from a builder.
-///
-/// The [id] must always be unique to a given package, phase, and glob
-/// pattern.
-class GlobAssetNode extends InternalAssetNode implements NodeWithInputs {
-  final Glob glob;
+  /// The next work that needs doing on this node.
 
   /// All the potential inputs matching this glob.
   ///
-  /// This field differs from [results] in that [GeneratedAssetNode] which may
+  /// This field differs from [results] in that [AssetNode.generated] which may
   /// have been readable but were not output are included here and not in
   /// [results].
-  @override
-  HashSet<AssetId> inputs;
+  BuiltSet<AssetId> get inputs;
 
-  @override
-  bool get isReadable => false;
+  /// The results of the glob.
+  BuiltList<AssetId> get results;
 
-  @override
-  final int phaseNumber;
+  factory GlobNodeState(void Function(GlobNodeStateBuilder) updates) =
+      _$GlobNodeState;
 
-  /// The actual results of the glob.
-  List<AssetId>? results;
-
-  @override
-  NodeState state;
-
-  GlobAssetNode(super.id, this.glob, this.phaseNumber, this.state,
-      {HashSet<AssetId>? inputs, super.lastKnownDigest, this.results})
-      : inputs = inputs ?? HashSet();
-
-  static AssetId createId(String package, Glob glob, int phaseNum) => AssetId(
-      package, 'glob.$phaseNum.${base64.encode(utf8.encode(glob.pattern))}');
-}
-
-/// A node which has [inputs], a [NodeState], and a [phaseNumber].
-abstract class NodeWithInputs implements AssetNode {
-  HashSet<AssetId> get inputs;
-
-  int get phaseNumber;
-
-  abstract NodeState state;
+  GlobNodeState._();
 }

@@ -1,11 +1,12 @@
 // Copyright (c) 2017, the Dart project authors.  Please see the AUTHORS file
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 import 'dart:convert';
 
 import 'package:analyzer/dart/element/element.dart';
-import 'package:meta/meta.dart';
 import 'package:package_config/package_config_types.dart';
 
 import '../analyzer/resolver.dart';
@@ -19,7 +20,6 @@ import '../resource/resource.dart';
 /// This represents a single [inputId], logic around resolving as a library,
 /// and the ability to read and write assets as allowed by the underlying build
 /// system.
-@sealed
 abstract class BuildStep implements AssetReader, AssetWriter {
   /// The primary for this build step.
   AssetId get inputId;
@@ -73,8 +73,11 @@ abstract class BuildStep implements AssetReader, AssetWriter {
   /// Future since the runner will be responsible for waiting until all outputs
   /// are written.
   @override
-  Future<void> writeAsString(AssetId id, FutureOr<String> contents,
-      {Encoding encoding = utf8});
+  Future<void> writeAsString(
+    AssetId id,
+    FutureOr<String> contents, {
+    Encoding encoding = utf8,
+  });
 
   /// A [Resolver] for [inputId].
   Resolver get resolver;
@@ -140,9 +143,11 @@ class NoOpStageTracker implements StageTracker {
   static const StageTracker instance = NoOpStageTracker._();
 
   @override
-  T trackStage<T>(String label, T Function() action,
-          {bool isExternal = false}) =>
-      action();
+  T trackStage<T>(
+    String label,
+    T Function() action, {
+    bool isExternal = false,
+  }) => action();
 
   const NoOpStageTracker._();
 }

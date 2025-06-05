@@ -23,17 +23,25 @@ class FinalizedAssetsView {
   bool _expired = false;
 
   FinalizedAssetsView(
-      this._assetGraph, this._packageGraph, this._optionalOutputTracker);
+    this._assetGraph,
+    this._packageGraph,
+    this._optionalOutputTracker,
+  );
 
   List<AssetId> allAssets({String? rootDir}) {
     if (_expired) {
       throw StateError(
-          'Cannot use a FinalizedAssetsView after it has expired!');
+        'Cannot use a FinalizedAssetsView after it has expired!',
+      );
     }
     return _assetGraph.allNodes
         .map((node) {
           if (_shouldSkipNode(
-              node, rootDir, _packageGraph, _optionalOutputTracker)) {
+            node,
+            rootDir,
+            _packageGraph,
+            _optionalOutputTracker,
+          )) {
             return null;
           }
           return node.id;
@@ -48,9 +56,13 @@ class FinalizedAssetsView {
   }
 }
 
-bool _shouldSkipNode(AssetNode node, String? rootDir, PackageGraph packageGraph,
-    OptionalOutputTracker optionalOutputTracker) {
-  if (!node.isReadable) return true;
+bool _shouldSkipNode(
+  AssetNode node,
+  String? rootDir,
+  PackageGraph packageGraph,
+  OptionalOutputTracker optionalOutputTracker,
+) {
+  if (!node.isFile) return true;
   if (node.isDeleted) return true;
 
   // Exclude non-lib assets if they're outside of the root directory or not from
@@ -60,9 +72,9 @@ bool _shouldSkipNode(AssetNode node, String? rootDir, PackageGraph packageGraph,
     if (node.id.package != packageGraph.root.name) return true;
   }
 
-  if (node is InternalAssetNode) return true;
-  if (node is GeneratedAssetNode) {
-    if (!node.wasOutput || node.isFailure || node.state != NodeState.upToDate) {
+  if (node.type == NodeType.internal || node.type == NodeType.glob) return true;
+  if (node.type == NodeType.generated) {
+    if (!node.wasOutput || node.generatedNodeState!.result == false) {
       return true;
     }
     return !optionalOutputTracker.isRequired(node.id);

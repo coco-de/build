@@ -7,18 +7,18 @@ import 'dart:io';
 import 'package:analyzer/file_system/file_system.dart' show ResourceProvider;
 // ignore: implementation_imports
 import 'package:analyzer/src/clients/build_resolvers/build_resolvers.dart';
-import 'package:build/build.dart';
 import 'package:package_config/package_config.dart' show PackageConfig;
 import 'package:path/path.dart' as p;
 import 'package:pub_semver/pub_semver.dart';
 
-import 'build_asset_uri_resolver.dart';
+import 'analysis_driver_filesystem.dart';
+import 'analysis_driver_model.dart';
 
 /// Builds an [AnalysisDriverForPackageBuild] backed by a summary SDK.
 ///
-/// Any code must be resolvable through [buildAssetUriResolver].
+/// Any code must be resolvable through [analysisDriverModel].
 Future<AnalysisDriverForPackageBuild> analysisDriver(
-  BuildAssetUriResolver buildAssetUriResolver,
+  AnalysisDriverModel analysisDriverModel,
   AnalysisOptions analysisOptions,
   String sdkSummaryPath,
   PackageConfig packageConfig,
@@ -27,35 +27,50 @@ Future<AnalysisDriverForPackageBuild> analysisDriver(
     analysisOptions: analysisOptions,
     packages: _buildAnalyzerPackages(
       packageConfig,
-      buildAssetUriResolver.resourceProvider,
+      analysisDriverModel.filesystem,
     ),
-    resourceProvider: buildAssetUriResolver.resourceProvider,
+    resourceProvider: analysisDriverModel.filesystem,
     sdkSummaryBytes: File(sdkSummaryPath).readAsBytesSync(),
-    uriResolvers: [
-      buildAssetUriResolver,
-    ],
+    uriResolvers: [analysisDriverModel.filesystem],
   );
 }
 
 Packages _buildAnalyzerPackages(
-        PackageConfig packageConfig, ResourceProvider resourceProvider) =>
-    Packages({
-      for (var package in packageConfig.packages)
-        package.name: Package(
-          name: package.name,
-          languageVersion: package.languageVersion == null
+  PackageConfig packageConfig,
+  ResourceProvider resourceProvider,
+) => Packages({
+  for (var package in packageConfig.packages)
+    package.name: Package(
+      name: package.name,
+      languageVersion:
+          package.languageVersion == null
               ? sdkLanguageVersion
-              : Version(package.languageVersion!.major,
-                  package.languageVersion!.minor, 0),
-          // Analyzer does not see the original file paths at all, we need to
-          // make them match the paths that we give it, so we use the
-          // `assetPath` function to create those.
-          rootFolder: resourceProvider
-              .getFolder(p.url.normalize(assetPath(AssetId(package.name, '')))),
-          libFolder: resourceProvider.getFolder(
-              p.url.normalize(assetPath(AssetId(package.name, 'lib')))),
+              : Version(
+                package.languageVersion!.major,
+                package.languageVersion!.minor,
+                0,
+              ),
+      // Analyzer does not see the original file paths at all, we need to
+      // make them match the paths that we give it, so we use the
+      // `assetPath` function to create those.
+      rootFolder: resourceProvider.getFolder(
+        p.url.normalize(
+          AnalysisDriverFilesystem.assetPathFor(
+            package: package.name,
+            path: '',
+          ),
         ),
-    });
+      ),
+      libFolder: resourceProvider.getFolder(
+        p.url.normalize(
+          AnalysisDriverFilesystem.assetPathFor(
+            package: package.name,
+            path: 'lib',
+          ),
+        ),
+      ),
+    ),
+});
 
 /// The language version of the current sdk parsed from the [Platform.version].
 final sdkLanguageVersion = () {

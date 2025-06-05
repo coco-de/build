@@ -1,6 +1,29 @@
-## 2.4.15-wip
+## 2.4.16-wip
+
+- Bump the min SDK to 3.7.0.
+- Use `build_test` 3.0.0.
+- Use `build_runner_core` 9.0.0.
+- Use new resolver always; remove `--use-experimental-resolver` flag.
+- Start using `package:build/src/internal.dart'.
+- Refactor `MultiPackageAssetReader` to internal `AssetFinder`.
+- `FinalizedReader` no longer implements `AssetReader`.
+- Refactor `CachingAssetReader` to `FilesystemCache`.
+- Refactor `FileBasedAssetReader` and `FileBasedAssetWriter` to `ReaderWriter`.
+- Remove `OnDeleteWriter`, add functionality to `ReaderWriter`.
+- Add `NodeType` to `AssetNode`, remove subtypes. Make mutations explicit.
+- Use `built_value` for `AssetNode` and related types.
+- Add details of what changed and what is built to `--verbose` logging.
+- Compute outputs as needed instead of storing them in the asset graph.
+- Refactor invalidation to track current build progress in `Build` instead of
+  in the asset graph.
+- Remove `completeBuild` from `RunnerAssetWriter` as it's no longer needed.
+
+## 2.4.15
 
 - Update to package:web and dart:js_interop.
+- Support the latest `package:shelf_web_socket`.
+- Add hidden `--use-experimental-resolver` flag for issue #3811 performance
+  work. This flag will be removed.
 
 ## 2.4.14
 

@@ -31,6 +31,7 @@ const releaseOption = 'release';
 const trackPerformanceOption = 'track-performance';
 const skipBuildScriptCheckOption = 'skip-build-script-check';
 const symlinkOption = 'symlink';
+const useExperimentalResolverOption = 'use-experimental-resolver';
 const usePollingWatcherOption = 'use-polling-watcher';
 const verboseOption = 'verbose';
 
@@ -102,27 +103,32 @@ class SharedOptions {
     required this.enableExperiments,
   });
 
-  SharedOptions.fromParsedArgs(ArgResults argResults,
-      Iterable<String> positionalArgs, String rootPackage, Command command)
-      : this._(
-          buildFilters: _parseBuildFilters(argResults, rootPackage),
-          deleteFilesByDefault: argResults[deleteFilesByDefaultOption] as bool,
-          enableLowResourcesMode: argResults[lowResourcesModeOption] as bool,
-          configKey: argResults[configOption] as String?,
-          buildDirs: {
-            ..._parseBuildDirs(argResults),
-            ..._parsePositionalBuildDirs(positionalArgs, command),
-          },
-          outputSymlinksOnly: argResults[symlinkOption] as bool,
-          trackPerformance: argResults[trackPerformanceOption] as bool,
-          skipBuildScriptCheck: argResults[skipBuildScriptCheckOption] as bool,
-          verbose: argResults[verboseOption] as bool,
-          builderConfigOverrides: _parseBuilderConfigOverrides(
-              argResults[defineOption], rootPackage),
-          isReleaseBuild: argResults[releaseOption] as bool,
-          logPerformanceDir: argResults[logPerformanceOption] as String?,
-          enableExperiments: argResults[enableExperimentOption] as List<String>,
-        );
+  SharedOptions.fromParsedArgs(
+    ArgResults argResults,
+    Iterable<String> positionalArgs,
+    String rootPackage,
+    Command command,
+  ) : this._(
+        buildFilters: _parseBuildFilters(argResults, rootPackage),
+        deleteFilesByDefault: argResults[deleteFilesByDefaultOption] as bool,
+        enableLowResourcesMode: argResults[lowResourcesModeOption] as bool,
+        configKey: argResults[configOption] as String?,
+        buildDirs: {
+          ..._parseBuildDirs(argResults),
+          ..._parsePositionalBuildDirs(positionalArgs, command),
+        },
+        outputSymlinksOnly: argResults[symlinkOption] as bool,
+        trackPerformance: argResults[trackPerformanceOption] as bool,
+        skipBuildScriptCheck: argResults[skipBuildScriptCheckOption] as bool,
+        verbose: argResults[verboseOption] as bool,
+        builderConfigOverrides: _parseBuilderConfigOverrides(
+          argResults[defineOption],
+          rootPackage,
+        ),
+        isReleaseBuild: argResults[releaseOption] as bool,
+        logPerformanceDir: argResults[logPerformanceOption] as String?,
+        enableExperiments: argResults[enableExperimentOption] as List<String>,
+      );
 }
 
 /// Options specific to the `daemon` command.
@@ -149,8 +155,12 @@ class DaemonOptions extends WatchOptions {
     required super.enableExperiments,
   }) : super._();
 
-  factory DaemonOptions.fromParsedArgs(ArgResults argResults,
-      Iterable<String> positionalArgs, String rootPackage, Command command) {
+  factory DaemonOptions.fromParsedArgs(
+    ArgResults argResults,
+    Iterable<String> positionalArgs,
+    String rootPackage,
+    Command command,
+  ) {
     var buildDirs = {
       ..._parseBuildDirs(argResults),
       ..._parsePositionalBuildDirs(positionalArgs, command),
@@ -165,8 +175,9 @@ class DaemonOptions extends WatchOptions {
       buildMode = BuildMode.Manual;
     } else {
       throw UsageException(
-          'Unexpected value for $buildModeFlag: $buildModeValue',
-          command.usage);
+        'Unexpected value for $buildModeFlag: $buildModeValue',
+        command.usage,
+      );
     }
 
     return DaemonOptions._(
@@ -181,8 +192,10 @@ class DaemonOptions extends WatchOptions {
       trackPerformance: argResults[trackPerformanceOption] as bool,
       skipBuildScriptCheck: argResults[skipBuildScriptCheckOption] as bool,
       verbose: argResults[verboseOption] as bool,
-      builderConfigOverrides:
-          _parseBuilderConfigOverrides(argResults[defineOption], rootPackage),
+      builderConfigOverrides: _parseBuilderConfigOverrides(
+        argResults[defineOption],
+        rootPackage,
+      ),
       isReleaseBuild: argResults[releaseOption] as bool,
       logPerformanceDir: argResults[logPerformanceOption] as String?,
       usePollingWatcher: argResults[usePollingWatcherOption] as bool,
@@ -216,28 +229,33 @@ class WatchOptions extends SharedOptions {
     required super.enableExperiments,
   }) : super._();
 
-  WatchOptions.fromParsedArgs(ArgResults argResults,
-      Iterable<String> positionalArgs, String rootPackage, Command command)
-      : this._(
-          buildFilters: _parseBuildFilters(argResults, rootPackage),
-          deleteFilesByDefault: argResults[deleteFilesByDefaultOption] as bool,
-          enableLowResourcesMode: argResults[lowResourcesModeOption] as bool,
-          configKey: argResults[configOption] as String?,
-          buildDirs: {
-            ..._parseBuildDirs(argResults),
-            ..._parsePositionalBuildDirs(positionalArgs, command),
-          },
-          outputSymlinksOnly: argResults[symlinkOption] as bool,
-          trackPerformance: argResults[trackPerformanceOption] as bool,
-          skipBuildScriptCheck: argResults[skipBuildScriptCheckOption] as bool,
-          verbose: argResults[verboseOption] as bool,
-          builderConfigOverrides: _parseBuilderConfigOverrides(
-              argResults[defineOption], rootPackage),
-          isReleaseBuild: argResults[releaseOption] as bool,
-          logPerformanceDir: argResults[logPerformanceOption] as String?,
-          usePollingWatcher: argResults[usePollingWatcherOption] as bool,
-          enableExperiments: argResults[enableExperimentOption] as List<String>,
-        );
+  WatchOptions.fromParsedArgs(
+    ArgResults argResults,
+    Iterable<String> positionalArgs,
+    String rootPackage,
+    Command command,
+  ) : this._(
+        buildFilters: _parseBuildFilters(argResults, rootPackage),
+        deleteFilesByDefault: argResults[deleteFilesByDefaultOption] as bool,
+        enableLowResourcesMode: argResults[lowResourcesModeOption] as bool,
+        configKey: argResults[configOption] as String?,
+        buildDirs: {
+          ..._parseBuildDirs(argResults),
+          ..._parsePositionalBuildDirs(positionalArgs, command),
+        },
+        outputSymlinksOnly: argResults[symlinkOption] as bool,
+        trackPerformance: argResults[trackPerformanceOption] as bool,
+        skipBuildScriptCheck: argResults[skipBuildScriptCheckOption] as bool,
+        verbose: argResults[verboseOption] as bool,
+        builderConfigOverrides: _parseBuilderConfigOverrides(
+          argResults[defineOption],
+          rootPackage,
+        ),
+        isReleaseBuild: argResults[releaseOption] as bool,
+        logPerformanceDir: argResults[logPerformanceOption] as String?,
+        usePollingWatcher: argResults[usePollingWatcherOption] as bool,
+        enableExperiments: argResults[enableExperimentOption] as List<String>,
+      );
 }
 
 /// Options specific to the `serve` command.
@@ -268,32 +286,40 @@ class ServeOptions extends WatchOptions {
     required super.enableExperiments,
   }) : super._();
 
-  factory ServeOptions.fromParsedArgs(ArgResults argResults,
-      Iterable<String> positionalArgs, String rootPackage, Command command) {
+  factory ServeOptions.fromParsedArgs(
+    ArgResults argResults,
+    Iterable<String> positionalArgs,
+    String rootPackage,
+    Command command,
+  ) {
     var serveTargets = <ServeTarget>[];
     var nextDefaultPort = 8080;
     for (var arg in positionalArgs) {
       var parts = arg.split(':');
       if (parts.length > 2) {
         throw UsageException(
-            'Invalid format for positional argument to serve `$arg`'
-            ', expected <directory>:<port>.',
-            command.usage);
+          'Invalid format for positional argument to serve `$arg`'
+          ', expected <directory>:<port>.',
+          command.usage,
+        );
       }
 
       var port = parts.length == 2 ? int.tryParse(parts[1]) : nextDefaultPort++;
       if (port == null) {
         throw UsageException(
-            'Unable to parse port number in `$arg`', command.usage);
+          'Unable to parse port number in `$arg`',
+          command.usage,
+        );
       }
 
       var path = parts.first;
       var pathParts = p.split(path);
       if (pathParts.length > 1 || path == '.') {
         throw UsageException(
-            'Only top level directories such as `web` or `test` are allowed as '
-            'positional args, but got `$path`',
-            command.usage);
+          'Only top level directories such as `web` or `test` are allowed as '
+          'positional args, but got `$path`',
+          command.usage,
+        );
       }
 
       serveTargets.add(ServeTarget(path, port));
@@ -313,9 +339,10 @@ class ServeOptions extends WatchOptions {
 
     var buildFilters = _parseBuildFilters(argResults, rootPackage);
 
-    var buildUpdates = (argResults[liveReloadOption] as bool)
-        ? BuildUpdatesOption.liveReload
-        : BuildUpdatesOption.none;
+    var buildUpdates =
+        (argResults[liveReloadOption] as bool)
+            ? BuildUpdatesOption.liveReload
+            : BuildUpdatesOption.none;
 
     return ServeOptions._(
       buildFilters: buildFilters,
@@ -331,8 +358,10 @@ class ServeOptions extends WatchOptions {
       trackPerformance: argResults[trackPerformanceOption] as bool,
       skipBuildScriptCheck: argResults[skipBuildScriptCheckOption] as bool,
       verbose: argResults[verboseOption] as bool,
-      builderConfigOverrides:
-          _parseBuilderConfigOverrides(argResults[defineOption], rootPackage),
+      builderConfigOverrides: _parseBuilderConfigOverrides(
+        argResults[defineOption],
+        rootPackage,
+      ),
       isReleaseBuild: argResults[releaseOption] as bool,
       logPerformanceDir: argResults[logPerformanceOption] as String?,
       usePollingWatcher: argResults[usePollingWatcherOption] as bool,
@@ -350,7 +379,9 @@ class ServeTarget {
 }
 
 Map<String, Map<String, dynamic>> _parseBuilderConfigOverrides(
-    dynamic parsedArg, String rootPackage) {
+  dynamic parsedArg,
+  String rootPackage,
+) {
   final builderConfigOverrides = <String, Map<String, dynamic>>{};
   if (parsedArg == null) return builderConfigOverrides;
   var allArgs = parsedArg is List<String> ? parsedArg : [parsedArg as String];
@@ -359,10 +390,11 @@ Map<String, Map<String, dynamic>> _parseBuilderConfigOverrides(
     const expectedFormat = '--define "<builder_key>=<option>=<value>"';
     if (parts.length < 3) {
       throw ArgumentError.value(
-          define,
-          defineOption,
-          'Expected at least 2 `=` signs, should be of the format like '
-          '$expectedFormat');
+        define,
+        defineOption,
+        'Expected at least 2 `=` signs, should be of the format like '
+        '$expectedFormat',
+      );
     } else if (parts.length > 3) {
       var rest = parts.sublist(2);
       parts
@@ -380,11 +412,14 @@ Map<String, Map<String, dynamic>> _parseBuilderConfigOverrides(
       value = parts[2];
     }
     final config = builderConfigOverrides.putIfAbsent(
-        builderKey, () => <String, dynamic>{});
+      builderKey,
+      () => <String, dynamic>{},
+    );
     if (config.containsKey(option)) {
       throw ArgumentError(
-          'Got duplicate overrides for the same builder option: '
-          '$builderKey=$option. Only one is allowed.');
+        'Got duplicate overrides for the same builder option: '
+        '$builderKey=$option. Only one is allowed.',
+      );
     }
     config[option] = value;
   }
@@ -405,8 +440,11 @@ Set<BuildDirectory> _parseBuildDirs(ArgResults argResults) {
 
   void checkExisting(String outputDir) {
     if (outputPaths.contains(outputDir)) {
-      throw ArgumentError.value(outputs.join(' '), '--output',
-          'Duplicate output directories are not allowed, got');
+      throw ArgumentError.value(
+        outputs.join(' '),
+        '--output',
+        'Duplicate output directories are not allowed, got',
+      );
     }
     outputPaths.add(outputDir);
   }
@@ -416,18 +454,26 @@ Set<BuildDirectory> _parseBuildDirs(ArgResults argResults) {
     if (split.length == 1) {
       var output = split.first;
       checkExisting(output);
-      result.add(BuildDirectory('',
-          outputLocation: OutputLocation(output, hoist: false)));
+      result.add(
+        BuildDirectory(
+          '',
+          outputLocation: OutputLocation(output, hoist: false),
+        ),
+      );
     } else if (split.length >= 2) {
       var output = split.sublist(1).join(':');
       checkExisting(output);
       var root = split.first;
       if (root.contains('/')) {
         throw ArgumentError.value(
-            option, '--output', 'Input root can not be nested');
+          option,
+          '--output',
+          'Input root can not be nested',
+        );
       }
       result.add(
-          BuildDirectory(split.first, outputLocation: OutputLocation(output)));
+        BuildDirectory(split.first, outputLocation: OutputLocation(output)),
+      );
     }
   }
   return result;
@@ -439,20 +485,21 @@ String _checkTopLevel(String arg, Command command) {
   var parts = p.split(arg);
   if (parts.length > 1 || arg == '.') {
     throw UsageException(
-        'Only top level directories such as `web` or `test` are allowed as '
-        'positional args, but got `$arg`',
-        command.usage);
+      'Only top level directories such as `web` or `test` are allowed as '
+      'positional args, but got `$arg`',
+      command.usage,
+    );
   }
   return arg;
 }
 
 /// Parses positional arguments as plain build directories.
 Set<BuildDirectory> _parsePositionalBuildDirs(
-        Iterable<String> positionalArgs, Command command) =>
-    {
-      for (var arg in positionalArgs)
-        BuildDirectory(_checkTopLevel(arg, command))
-    };
+  Iterable<String> positionalArgs,
+  Command command,
+) => {
+  for (var arg in positionalArgs) BuildDirectory(_checkTopLevel(arg, command)),
+};
 
 /// Returns build filters parsed from [buildFilterOption] arguments.
 ///
@@ -462,14 +509,13 @@ Set<BuildFilter> _parseBuildFilters(ArgResults argResults, String rootPackage) {
   var filterArgs = argResults[buildFilterOption] as List<String>?;
   if (filterArgs == null || filterArgs.isEmpty) return const {};
   try {
-    return {
-      for (var arg in filterArgs) BuildFilter.fromArg(arg, rootPackage),
-    };
+    return {for (var arg in filterArgs) BuildFilter.fromArg(arg, rootPackage)};
   } on FormatException catch (e) {
     throw ArgumentError.value(
-        e.source,
-        '--build-filter',
-        'Not a valid build filter, must be either a relative path or '
-            '`package:` uri.\n\n$e');
+      e.source,
+      '--build-filter',
+      'Not a valid build filter, must be either a relative path or '
+          '`package:` uri.\n\n$e',
+    );
   }
 }
