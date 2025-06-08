@@ -35,7 +35,9 @@ class SdkJsCopyBuilder implements Builder {
   final _sdkJsLocation = p.join(
     webSdkDir,
     'kernel',
-    'amd-canvaskit-sound',
+    flutterVersion.compareTo('3.32.0') >= 0
+        ? 'amd-canvaskit'
+        : 'amd-canvaskit-sound',
     'dart_sdk.js',
   );
 
@@ -43,7 +45,9 @@ class SdkJsCopyBuilder implements Builder {
   final _sdkJsMapLocation = p.join(
     webSdkDir,
     'kernel',
-    'amd-canvaskit-sound',
+    flutterVersion.compareTo('3.32.0') >= 0
+        ? 'amd-canvaskit'
+        : 'amd-canvaskit-sound',
     'dart_sdk.js.map',
   );
 

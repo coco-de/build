@@ -15,7 +15,7 @@ final defaultAnalysisOptionsId = AssetId(
 );
 
 final sdkDir = p.dirname(p.dirname(Platform.resolvedExecutable));
-final webSdkDir =
+final flutterInfo =
     (() {
       var result = Process.runSync(
         'flutter',
@@ -40,8 +40,12 @@ final webSdkDir =
           'If you think this is a bug, open an issue at https://github.com/schultek/jaspr/issues',
         );
       }
+      return output;
+    })();
+final webSdkDir =
+    (() {
       var webSdkPath = p.join(
-        output['flutterRoot'] as String,
+        flutterInfo['flutterRoot'] as String,
         'bin',
         'cache',
         'flutter_web_sdk',
@@ -58,6 +62,7 @@ final webSdkDir =
       }
       return webSdkPath;
     })();
+final flutterVersion = flutterInfo['flutterVersion'] as String;
 
 String defaultAnalysisOptionsArg(ScratchSpace scratchSpace) =>
     '--options=${scratchSpace.fileFor(defaultAnalysisOptionsId).path}';

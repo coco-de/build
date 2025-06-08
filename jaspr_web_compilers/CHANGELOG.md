@@ -1,3 +1,7 @@
+## 4.1.5+1
+
+- Fixed compilation for flutter 3.32.0 and later.
+
 ## 4.1.5
 
 - Remove dependency on the deprecated `package:js`.

@@ -40,7 +40,12 @@ Builder ddcBuilder(BuilderOptions options) {
     emitDebugSymbols: _readEmitDebugSymbolsOption(options),
     canaryFeatures: _readCanaryOption(options),
     platformSdk: webSdkDir,
-    sdkKernelPath: p.url.join('kernel', 'ddc_outline_sound.dill'),
+    sdkKernelPath: p.url.join(
+      'kernel',
+      flutterVersion.compareTo('3.32.0') >= 0
+          ? 'ddc_outline.dill'
+          : 'ddc_outline_sound.dill',
+    ),
     trackUnusedInputs: _readTrackInputsCompilerOption(options),
     platform: ddcPlatform,
     environment: _readEnvironmentOption(options),
@@ -57,7 +62,12 @@ Builder ddcKernelBuilder(BuilderOptions options) {
   return KernelBuilder(
     summaryOnly: true,
     platformSdk: webSdkDir,
-    sdkKernelPath: p.url.join('kernel', 'ddc_outline_sound.dill'),
+    sdkKernelPath: p.url.join(
+      'kernel',
+      flutterVersion.compareTo('3.32.0') >= 0
+          ? 'ddc_outline.dill'
+          : 'ddc_outline_sound.dill',
+    ),
     outputExtension: ddcKernelExtension,
     platform: ddcPlatform,
     useIncrementalCompiler: _readUseIncrementalCompilerOption(options),
