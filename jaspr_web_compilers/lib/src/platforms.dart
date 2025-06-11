@@ -37,9 +37,7 @@ const _additionalWebLibraries = [
 ];
 
 /// Additional libraries supported by dart2wasm.
-const _additionalWasmLibraries = [
-  'ffi',
-];
+const _additionalWasmLibraries = ['ffi'];
 
 const _jsCompilerLibraries = [..._coreLibraries, ..._additionalWebLibraries];
 
@@ -47,5 +45,7 @@ final ddcPlatform = DartPlatform.register('ddc', _jsCompilerLibraries);
 
 final dart2jsPlatform = DartPlatform.register('dart2js', _jsCompilerLibraries);
 
-final dart2wasmPlatform = DartPlatform.register(
-    'dart2wasm', [..._coreLibraries, ..._additionalWasmLibraries]);
+final dart2wasmPlatform = DartPlatform.register('dart2wasm', [
+  ..._coreLibraries,
+  ..._additionalWasmLibraries,
+]);

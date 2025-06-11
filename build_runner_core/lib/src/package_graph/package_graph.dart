@@ -4,6 +4,10 @@
 
 import 'dart:io';
 
+import 'package:build/build.dart';
+// ignore: implementation_imports
+import 'package:build/src/internal.dart';
+import 'package:built_collection/built_collection.dart';
 import 'package:package_config/package_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
@@ -12,11 +16,15 @@ import '../util/constants.dart';
 
 /// The SDK package, we filter this to the core libs and dev compiler
 /// resources.
-final _sdkPackageNode =
-    PackageNode(r'$sdk', sdkPath, DependencyType.hosted, null);
+final _sdkPackageNode = PackageNode(
+  r'$sdk',
+  sdkPath,
+  DependencyType.hosted,
+  null,
+);
 
 /// A graph of the package dependencies for an application.
-class PackageGraph {
+class PackageGraph implements AssetPathProvider {
   /// The root application package.
   final PackageNode root;
 
@@ -27,10 +35,11 @@ class PackageGraph {
   final PackageConfig asPackageConfig;
 
   PackageGraph._(this.root, Map<String, PackageNode> allPackages)
-      : asPackageConfig = _packagesToConfig(allPackages.values),
-        allPackages = Map.unmodifiable(
-            Map<String, PackageNode>.from(allPackages)
-              ..putIfAbsent(r'$sdk', () => _sdkPackageNode)) {
+    : asPackageConfig = _packagesToConfig(allPackages.values),
+      allPackages = Map.unmodifiable(
+        Map<String, PackageNode>.from(allPackages)
+          ..putIfAbsent(r'$sdk', () => _sdkPackageNode),
+      ) {
     if (!root.isRoot) {
       throw ArgumentError('Root node must indicate `isRoot`');
     }
@@ -63,14 +72,17 @@ class PackageGraph {
     final pubspec = File(p.join(packagePath, 'pubspec.yaml'));
     if (!pubspec.existsSync()) {
       throw StateError(
-          'Unable to generate package graph, no `pubspec.yaml` found. '
-          'This program must be ran from the root directory of your package.');
+        'Unable to generate package graph, no `pubspec.yaml` found. '
+        'This program must be ran from the root directory of your package.',
+      );
     }
     final rootPubspec = _pubspecForPath(packagePath);
     final rootPackageName = rootPubspec['name'] as String?;
     if (rootPackageName == null) {
-      throw StateError('The current package has no name, please add one to the '
-          'pubspec.yaml.');
+      throw StateError(
+        'The current package has no name, please add one to the '
+        'pubspec.yaml.',
+      );
     }
 
     // The path of the directory that contains .dart_tool/package_config.json.
@@ -82,8 +94,10 @@ class PackageGraph {
     // where a package config was found. It doesn't seem possible to obtain this
     // directly with package:package_config.
     while (true) {
-      packageConfig =
-          await findPackageConfig(Directory(rootDir), recurse: false);
+      packageConfig = await findPackageConfig(
+        Directory(rootDir),
+        recurse: false,
+      );
       if (packageConfig != null) {
         break;
       }
@@ -97,7 +111,8 @@ class PackageGraph {
 
     if (packageConfig == null) {
       throw StateError(
-          'Unable to find package config for package at $packagePath.');
+        'Unable to find package config for package at $packagePath.',
+      );
     }
     final dependencyTypes = _parseDependencyTypes(rootDir);
 
@@ -105,40 +120,50 @@ class PackageGraph {
     // A consistent package order _should_ mean a consistent order of build
     // phases. It's not a guarantee, but also not required for correctness, only
     // an optimization.
-    final consistentlyOrderedPackages = packageConfig.packages.toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
+    final consistentlyOrderedPackages =
+        packageConfig.packages.toList()
+          ..sort((a, b) => a.name.compareTo(b.name));
     for (final package in consistentlyOrderedPackages) {
       final isRoot = package.name == rootPackageName;
       nodes[package.name] = PackageNode(
-          package.name,
-          package.root.toFilePath(),
-          // If the package is missing from pubspec.lock, assume it is a path
-          // dependency.
-          dependencyTypes[package.name] ?? DependencyType.path,
-          package.languageVersion,
-          isRoot: isRoot);
+        package.name,
+        package.root.toFilePath(),
+        // If the package is missing from pubspec.lock, assume it is a path
+        // dependency.
+        dependencyTypes[package.name] ?? DependencyType.path,
+        package.languageVersion,
+        isRoot: isRoot,
+      );
     }
     PackageNode packageNode(String package, {String? parent}) {
       final node = nodes[package];
       if (node == null) {
         throw StateError(
-            'Dependency $package ${parent != null ? 'of $parent ' : ''}not '
-            'present, please run `dart pub get` or `flutter pub get` to fetch '
-            'dependencies.');
+          'Dependency $package ${parent != null ? 'of $parent ' : ''}not '
+          'present, please run `dart pub get` or `flutter pub get` to fetch '
+          'dependencies.',
+        );
       }
       return node;
     }
 
     final rootNode = packageNode(rootPackageName);
-    rootNode.dependencies.addAll(_depsFromYaml(rootPubspec, isRoot: true)
-        .map((n) => packageNode(n, parent: rootPackageName)));
+    rootNode.dependencies.addAll(
+      _depsFromYaml(
+        rootPubspec,
+        isRoot: true,
+      ).map((n) => packageNode(n, parent: rootPackageName)),
+    );
 
     final packageDependencies = _parsePackageDependencies(
-        packageConfig.packages.where((p) => p.name != rootPackageName));
+      packageConfig.packages.where((p) => p.name != rootPackageName),
+    );
     for (final packageName in packageDependencies.keys) {
       packageNode(packageName).dependencies.addAll(
-          packageDependencies[packageName]!
-              .map((n) => packageNode(n, parent: packageName)));
+        packageDependencies[packageName]!.map(
+          (n) => packageNode(n, parent: packageName),
+        ),
+      );
     }
     return PackageGraph._(rootNode, nodes);
   }
@@ -157,7 +182,8 @@ class PackageGraph {
           Package(
             package.name,
             Uri.file(
-                package.path.endsWith('/') ? package.path : '${package.path}/'),
+              package.path.endsWith('/') ? package.path : '${package.path}/',
+            ),
             languageVersion: package.languageVersion,
             packageUriRoot: relativeLib,
           ),
@@ -166,6 +192,22 @@ class PackageGraph {
 
   /// Shorthand to get a package by name.
   PackageNode? operator [](String packageName) => allPackages[packageName];
+
+  /// Map from package name to package language version.
+  BuiltMap<String, LanguageVersion?> get languageVersions =>
+      {
+        for (final package in allPackages.values)
+          package.name: package.languageVersion,
+      }.build();
+
+  @override
+  String pathFor(AssetId id) {
+    var package = this[id.package];
+    if (package == null) {
+      throw PackageNotFoundException(id.package);
+    }
+    return p.join(package.path, id.path);
+  }
 
   @override
   String toString() {
@@ -200,9 +242,13 @@ class PackageNode {
 
   final LanguageVersion? languageVersion;
 
-  PackageNode(this.name, String path, this.dependencyType, this.languageVersion,
-      {this.isRoot = false})
-      : path = p.canonicalize(path);
+  PackageNode(
+    this.name,
+    String path,
+    this.dependencyType,
+    this.languageVersion, {
+    this.isRoot = false,
+  }) : path = p.canonicalize(path);
 
   @override
   String toString() => '''
@@ -222,16 +268,18 @@ Map<String, DependencyType> _parseDependencyTypes(String rootPackagePath) {
   final pubspecLock = File(p.join(rootPackagePath, 'pubspec.lock'));
   if (!pubspecLock.existsSync()) {
     throw StateError(
-        'Unable to generate package graph, no `pubspec.lock` found. '
-        'This program must be ran from the root directory of your package.');
+      'Unable to generate package graph, no `pubspec.lock` found. '
+      'This program must be ran from the root directory of your package.',
+    );
   }
   final dependencyTypes = <String, DependencyType>{};
   final dependencies = loadYaml(pubspecLock.readAsStringSync()) as YamlMap;
   final packages = dependencies['packages'] as YamlMap;
   for (final packageName in packages.keys) {
     final source = (packages[packageName] as YamlMap)['source'];
-    dependencyTypes[packageName as String] =
-        _dependencyTypeFromSource(source as String);
+    dependencyTypes[packageName as String] = _dependencyTypeFromSource(
+      source as String,
+    );
   }
   return dependencyTypes;
 }
@@ -252,7 +300,8 @@ DependencyType _dependencyTypeFromSource(String source) {
 /// Read the pubspec for each package in [packages] and finds it's
 /// dependencies.
 Map<String, List<String>> _parsePackageDependencies(
-    Iterable<Package> packages) {
+  Iterable<Package> packages,
+) {
   final dependencies = <String, List<String>>{};
   for (final package in packages) {
     final pubspec = _pubspecForPath(package.root.toFilePath());
@@ -282,7 +331,8 @@ YamlMap _pubspecForPath(String absolutePath) {
   var pubspec = File(pubspecPath);
   if (!pubspec.existsSync()) {
     throw StateError(
-        'Unable to generate package graph, no `$pubspecPath` found.');
+      'Unable to generate package graph, no `$pubspecPath` found.',
+    );
   }
   return loadYaml(pubspec.readAsStringSync()) as YamlMap;
 }

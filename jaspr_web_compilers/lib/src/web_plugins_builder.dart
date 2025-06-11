@@ -13,7 +13,7 @@ import 'package:yaml/yaml.dart';
 class WebPluginsBuilder implements Builder {
   @override
   final buildExtensions = {
-    r'$package$': ['lib/web_plugin_registrant.dart']
+    r'$package$': ['lib/web_plugin_registrant.dart'],
   };
 
   @override
@@ -39,7 +39,9 @@ class WebPluginsBuilder implements Builder {
   }
 
   Future<Plugin?> _loadPluginForPackage(
-      Package package, BuildStep buildStep) async {
+    Package package,
+    BuildStep buildStep,
+  ) async {
     var pubspecId = AssetId.resolve(package.root.resolve('pubspec.yaml'));
     Object? pubspec;
     try {
@@ -48,19 +50,17 @@ class WebPluginsBuilder implements Builder {
       // Do nothing, potentially not a plugin.
     }
 
-    if (pubspec
-        case {
-          'flutter': {'plugin': {'platforms': {'web': YamlMap webPlatformYaml}}}
-        }) {
+    if (pubspec case {
+      'flutter': {'plugin': {'platforms': {'web': YamlMap webPlatformYaml}}},
+    }) {
       if (webPlatformYaml.containsKey('default_package')) {
         return null;
       }
 
-      if (webPlatformYaml
-          case {
-            'pluginClass': String pluginClass,
-            'fileName': String fileName
-          }) {
+      if (webPlatformYaml case {
+        'pluginClass': String pluginClass,
+        'fileName': String fileName,
+      }) {
         return Plugin(
           name: package.name,
           pluginClass: pluginClass,
@@ -94,23 +94,29 @@ ${plugins.map((p) => "  ${p.pluginClass}.registerWith(registrar);\n").join()}
 }
 
 class Plugin {
-  Plugin(
-      {required this.name, required this.pluginClass, required this.fileName});
+  Plugin({
+    required this.name,
+    required this.pluginClass,
+    required this.fileName,
+  });
 
   factory Plugin.fromJson(Map<String, dynamic> map) => switch (map) {
-        {
-          'name': String name,
-          'pluginClass': String pluginClass,
-          'fileName': String fileName
-        } =>
-          Plugin(name: name, pluginClass: pluginClass, fileName: fileName),
-        _ => throw Exception('Cannot parse map to plugin.'),
-      };
+    {
+      'name': String name,
+      'pluginClass': String pluginClass,
+      'fileName': String fileName,
+    } =>
+      Plugin(name: name, pluginClass: pluginClass, fileName: fileName),
+    _ => throw Exception('Cannot parse map to plugin.'),
+  };
 
   final String name;
   final String pluginClass;
   final String fileName;
 
-  Object toJson() =>
-      {'name': name, 'pluginClass': pluginClass, 'fileName': fileName};
+  Object toJson() => {
+    'name': name,
+    'pluginClass': pluginClass,
+    'fileName': fileName,
+  };
 }

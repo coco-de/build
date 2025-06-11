@@ -18,9 +18,7 @@ class WebEntrypointBootstrapBuilder implements Builder {
 
   @override
   final buildExtensions = const {
-    '.dart': [
-      bootstrapDartExtension,
-    ],
+    '.dart': [bootstrapDartExtension],
   };
 
   @override
@@ -29,11 +27,13 @@ class WebEntrypointBootstrapBuilder implements Builder {
     var isAppEntrypoint = await isAppEntryPoint(dartEntrypointId, buildStep);
     if (!isAppEntrypoint) return;
 
-    var appEntrypointId =
-        dartEntrypointId.changeExtension(bootstrapDartExtension);
+    var appEntrypointId = dartEntrypointId.changeExtension(
+      bootstrapDartExtension,
+    );
 
     var hasWebPlugins = await buildStep.canRead(
-        AssetId(dartEntrypointId.package, 'lib/web_plugin_registrant.dart'));
+      AssetId(dartEntrypointId.package, 'lib/web_plugin_registrant.dart'),
+    );
 
     await buildStep.writeAsString(appEntrypointId, '''
 

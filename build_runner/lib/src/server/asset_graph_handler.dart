@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:build/build.dart';
+import 'package:build_runner_core/build_runner_core.dart';
 // ignore: implementation_imports
 import 'package:build_runner_core/src/asset_graph/graph.dart';
 // ignore: implementation_imports
@@ -18,7 +19,7 @@ import 'path_to_asset_id.dart';
 
 /// A handler for `/$graph` requests under a specific `rootDir`.
 class AssetGraphHandler {
-  final AssetReader _reader;
+  final FinalizedReader _reader;
   final String _rootPackage;
   final AssetGraph _assetGraph;
 
@@ -50,9 +51,11 @@ class AssetGraphHandler {
       case '':
         if (!request.url.hasQuery) {
           return shelf.Response.ok(
-              await _reader.readAsString(
-                  AssetId('build_runner', 'lib/src/server/graph_viz.html')),
-              headers: {HttpHeaders.contentTypeHeader: 'text/html'});
+            await _reader.readAsString(
+              AssetId('build_runner', 'lib/src/server/graph_viz.html'),
+            ),
+            headers: {HttpHeaders.contentTypeHeader: 'text/html'},
+          );
         }
 
         var query = request.url.queryParameters['q']?.trim();
@@ -68,8 +71,11 @@ class AssetGraphHandler {
     return shelf.Response.notFound('Bad request: "${request.url}".');
   }
 
-  Future<shelf.Response> _handleQuery(String query, String rootDir,
-      {String? filter}) async {
+  Future<shelf.Response> _handleQuery(
+    String query,
+    String rootDir, {
+    String? filter,
+  }) async {
     var filterGlob = filter != null ? Glob(filter) : null;
     var pipeIndex = query.indexOf('|');
 
@@ -78,16 +84,20 @@ class AssetGraphHandler {
       var querySplit = query.split('/');
 
       assetId = pathToAssetId(
-          _rootPackage, querySplit.first, querySplit.skip(1).toList());
+        _rootPackage,
+        querySplit.first,
+        querySplit.skip(1).toList(),
+      );
 
       if (!_assetGraph.contains(assetId)) {
         var secondTry = pathToAssetId(_rootPackage, rootDir, querySplit);
 
         if (!_assetGraph.contains(secondTry)) {
           return shelf.Response.notFound(
-              'Could not find asset for path "$query". Tried:\n'
-              '- $assetId\n'
-              '- $secondTry');
+            'Could not find asset for path "$query". Tried:\n'
+            '- $assetId\n'
+            '- $secondTry',
+          );
         }
         assetId = secondTry;
       }
@@ -95,44 +105,69 @@ class AssetGraphHandler {
       assetId = AssetId.parse(query);
       if (!_assetGraph.contains(assetId)) {
         return shelf.Response.notFound(
-            'Could not find asset in build graph: $assetId');
+          'Could not find asset in build graph: $assetId',
+        );
       }
     }
     var node = _assetGraph.get(assetId)!;
     var currentEdge = 0;
     var nodes = [
-      {'id': '${node.id}', 'label': '${node.id}'}
+      {'id': '${node.id}', 'label': '${node.id}'},
     ];
     var edges = <Map<String, String>>[];
-    for (final output in node.outputs) {
+    var computedOutputs = _assetGraph.computeOutputs();
+    for (final output in (computedOutputs[node.id] ?? <AssetId>{})) {
       if (filterGlob != null && !filterGlob.matches(output.toString())) {
         continue;
       }
-      edges.add(
-          {'from': '${node.id}', 'to': '$output', 'id': 'e${currentEdge++}'});
+      edges.add({
+        'from': '${node.id}',
+        'to': '$output',
+        'id': 'e${currentEdge++}',
+      });
       nodes.add({'id': '$output', 'label': '$output'});
     }
-    if (node is NodeWithInputs) {
-      for (final input in node.inputs) {
+    if (node.type == NodeType.generated || node.type == NodeType.glob) {
+      final inputs =
+          node.type == NodeType.generated
+              ? node.generatedNodeState!.inputs
+              : node.globNodeState!.inputs;
+      for (final input in inputs) {
         if (filterGlob != null && !filterGlob.matches(input.toString())) {
           continue;
         }
-        edges.add(
-            {'from': '$input', 'to': '${node.id}', 'id': 'e${currentEdge++}'});
+        edges.add({
+          'from': '$input',
+          'to': '${node.id}',
+          'id': 'e${currentEdge++}',
+        });
         nodes.add({'id': '$input', 'label': '$input'});
       }
     }
     var result = <String, dynamic>{
       'primary': {
         'id': '${node.id}',
-        'hidden': node is GeneratedAssetNode ? node.isHidden : null,
-        'state': node is NodeWithInputs ? '${node.state}' : null,
-        'wasOutput': node is GeneratedAssetNode ? node.wasOutput : null,
-        'isFailure': node is GeneratedAssetNode ? node.isFailure : null,
-        'phaseNumber': node is NodeWithInputs ? node.phaseNumber : null,
+        'hidden':
+            node.type == NodeType.generated
+                ? node.generatedNodeConfiguration!.isHidden
+                : null,
+        'wasOutput': node.type == NodeType.generated ? node.wasOutput : null,
+        'result':
+            node.type == NodeType.generated
+                ? node.generatedNodeState!.result
+                : null,
+        'phaseNumber':
+            node.type == NodeType.generated
+                ? node.generatedNodeConfiguration!.phaseNumber
+                : node.type == NodeType.glob
+                ? node.globNodeConfiguration!.phaseNumber
+                : null,
         'type': node.runtimeType.toString(),
-        'glob': node is GlobAssetNode ? node.glob.pattern : null,
-        'lastKnownDigest': node.lastKnownDigest.toString(),
+        'glob':
+            node.type == NodeType.glob
+                ? node.globNodeConfiguration!.glob
+                : null,
+        'digest': node.digest.toString(),
       },
       'edges': edges,
       'nodes': nodes,
@@ -143,5 +178,7 @@ class AssetGraphHandler {
 
 final _jsonUtf8Encoder = JsonUtf8Encoder();
 
-shelf.Response _jsonResponse(List<int> body) => shelf.Response.ok(body,
-    headers: {HttpHeaders.contentTypeHeader: 'application/json'});
+shelf.Response _jsonResponse(List<int> body) => shelf.Response.ok(
+  body,
+  headers: {HttpHeaders.contentTypeHeader: 'application/json'},
+);

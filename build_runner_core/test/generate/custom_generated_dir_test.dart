@@ -14,30 +14,27 @@ void main() {
   late PackageGraph packageGraph;
 
   setUp(() {
-    packageGraph = buildPackageGraph({
-      rootPackage('a', path: 'a/'): [],
-    });
+    packageGraph = buildPackageGraph({rootPackage('a', path: 'a/'): []});
   });
 
   test('can output files to a custom generated dir', () async {
-    var writer = InMemoryRunnerAssetWriter();
-    await testBuilders(
-        [
-          applyToRoot(
-              TestBuilder(
-                  buildExtensions: appendExtension('.copy', from: '.txt')),
-              hideOutput: true),
-        ],
-        {'a|lib/a.txt': 'a'},
-        packageGraph: packageGraph,
-        outputs: {
-          r'$$a|lib/a.txt.copy': 'a',
-        },
-        expectedGeneratedDir: customGeneratedDir,
-        writer: writer);
+    final result = await testPhases(
+      [
+        applyToRoot(
+          TestBuilder(buildExtensions: appendExtension('.copy', from: '.txt')),
+          hideOutput: true,
+        ),
+      ],
+      {'a|lib/a.txt': 'a'},
+      packageGraph: packageGraph,
+      outputs: {r'$$a|lib/a.txt.copy': 'a'},
+      expectedGeneratedDir: customGeneratedDir,
+    );
     expect(
-        writer.assets[AssetId(
-            'a', '.dart_tool/build/$customGeneratedDir/a/lib/a.txt.copy')],
-        isNotNull);
+      result.readerWriter.testing.exists(
+        AssetId('a', '.dart_tool/build/$customGeneratedDir/a/lib/a.txt.copy'),
+      ),
+      isTrue,
+    );
   });
 }

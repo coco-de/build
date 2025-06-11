@@ -9,39 +9,60 @@ import 'package:build/build.dart';
 import 'package:path/path.dart' as p;
 import 'package:scratch_space/scratch_space.dart';
 
-final defaultAnalysisOptionsId =
-    AssetId('build_modules', 'lib/src/analysis_options.default.yaml');
+final defaultAnalysisOptionsId = AssetId(
+  'build_modules',
+  'lib/src/analysis_options.default.yaml',
+);
 
 final sdkDir = p.dirname(p.dirname(Platform.resolvedExecutable));
-final webSdkDir = (() {
-  var result = Process.runSync('flutter', ['doctor', '--version', '--machine'],
-      stdoutEncoding: utf8, runInShell: true);
-  if (result.exitCode < 0) {
-    throw UnsupportedError(
-        'Calling "flutter doctor" resulted in: "${result.stderr}". '
-        'Make sure flutter is installed and setup correctly.');
-  }
-  final Map output;
-  try {
-    output = jsonDecode(result.stdout as String) as Map;
-  } catch (e) {
-    throw UnsupportedError('Could not find flutter web sdk. '
-        'Calling "flutter doctor" resulted in: "${result.stdout}". '
-        'Make sure flutter is installed and setup correctly. '
-        'If you think this is a bug, open an issue at https://github.com/schultek/jaspr/issues');
-  }
-  var webSdkPath = p.join(
-      output['flutterRoot'] as String, 'bin', 'cache', 'flutter_web_sdk');
-  if (!Directory(webSdkPath).existsSync()) {
-    Process.runSync('flutter', ['precache', '--web'], runInShell: true);
-  }
-  if (!Directory(webSdkPath).existsSync()) {
-    throw UnsupportedError('Could not find flutter web sdk in $webSdkPath. '
-        'Make sure flutter is installed and setup correctly. '
-        'If you think this is a bug, open an issue at https://github.com/schultek/jaspr/issues');
-  }
-  return webSdkPath;
-})();
+final flutterInfo =
+    (() {
+      var result = Process.runSync(
+        'flutter',
+        ['doctor', '--version', '--machine'],
+        stdoutEncoding: utf8,
+        runInShell: true,
+      );
+      if (result.exitCode < 0) {
+        throw UnsupportedError(
+          'Calling "flutter doctor" resulted in: "${result.stderr}". '
+          'Make sure flutter is installed and setup correctly.',
+        );
+      }
+      final Map output;
+      try {
+        output = jsonDecode(result.stdout as String) as Map;
+      } catch (e) {
+        throw UnsupportedError(
+          'Could not find flutter web sdk. '
+          'Calling "flutter doctor" resulted in: "${result.stdout}". '
+          'Make sure flutter is installed and setup correctly. '
+          'If you think this is a bug, open an issue at https://github.com/schultek/jaspr/issues',
+        );
+      }
+      return output;
+    })();
+final webSdkDir =
+    (() {
+      var webSdkPath = p.join(
+        flutterInfo['flutterRoot'] as String,
+        'bin',
+        'cache',
+        'flutter_web_sdk',
+      );
+      if (!Directory(webSdkPath).existsSync()) {
+        Process.runSync('flutter', ['precache', '--web'], runInShell: true);
+      }
+      if (!Directory(webSdkPath).existsSync()) {
+        throw UnsupportedError(
+          'Could not find flutter web sdk in $webSdkPath. '
+          'Make sure flutter is installed and setup correctly. '
+          'If you think this is a bug, open an issue at https://github.com/schultek/jaspr/issues',
+        );
+      }
+      return webSdkPath;
+    })();
+final flutterVersion = flutterInfo['flutterVersion'] as String;
 
 String defaultAnalysisOptionsArg(ScratchSpace scratchSpace) =>
     '--options=${scratchSpace.fileFor(defaultAnalysisOptionsId).path}';
@@ -52,19 +73,28 @@ String get sdkDdcKernelPath =>
 /// Validates that [config] only has the top level keys [supportedOptions].
 ///
 /// Throws an [ArgumentError] if not.
-void validateOptions(Map<String, dynamic> config, List<String> supportedOptions,
-    String builderKey,
-    {List<String> deprecatedOptions = const []}) {
+void validateOptions(
+  Map<String, dynamic> config,
+  List<String> supportedOptions,
+  String builderKey, {
+  List<String> deprecatedOptions = const [],
+}) {
   var unsupported = config.keys.where(
-      (o) => !supportedOptions.contains(o) && !deprecatedOptions.contains(o));
+    (o) => !supportedOptions.contains(o) && !deprecatedOptions.contains(o),
+  );
   if (unsupported.isNotEmpty) {
-    throw ArgumentError.value(unsupported.join(', '), builderKey,
-        'only $supportedOptions are supported options, but got');
+    throw ArgumentError.value(
+      unsupported.join(', '),
+      builderKey,
+      'only $supportedOptions are supported options, but got',
+    );
   }
   var deprecated = config.keys.where(deprecatedOptions.contains);
   if (deprecated.isNotEmpty) {
-    log.warning('Found deprecated options ${deprecated.join(', ')}. These no '
-        'longer have any effect and should be removed.');
+    log.warning(
+      'Found deprecated options ${deprecated.join(', ')}. These no '
+      'longer have any effect and should be removed.',
+    );
   }
 }
 
@@ -75,15 +105,19 @@ void validateOptions(Map<String, dynamic> config, List<String> supportedOptions,
 /// - Strips the scheme from the uri
 /// - Strips the top level directory if its not `packages`
 Future<void> fixAndCopySourceMap(
-    AssetId id, ScratchSpace scratchSpace, AssetWriter writer) async {
+  AssetId id,
+  ScratchSpace scratchSpace,
+  AssetWriter writer,
+) async {
   // Copied to `web/stack_trace_mapper.dart`, these need to be kept in sync.
   String fixMappedSource(String source) {
     var uri = Uri.parse(source);
     // We only want to rewrite multi-root scheme uris.
     if (uri.scheme.isEmpty) return source;
-    var newSegments = uri.pathSegments.first == 'packages'
-        ? uri.pathSegments
-        : uri.pathSegments.skip(1);
+    var newSegments =
+        uri.pathSegments.first == 'packages'
+            ? uri.pathSegments
+            : uri.pathSegments.skip(1);
     return Uri(path: p.url.joinAll(['/', ...newSegments])).toString();
   }
 

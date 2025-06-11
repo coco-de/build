@@ -10,12 +10,13 @@ import 'package:build/build.dart';
 import 'package:build_runner_core/build_runner_core.dart';
 import 'package:build_runner_core/src/asset_graph/graph.dart';
 import 'package:build_runner_core/src/asset_graph/node.dart';
+import 'package:build_runner_core/src/asset_graph/post_process_build_step_id.dart';
+import 'package:build_runner_core/src/generate/build_phases.dart';
 import 'package:build_runner_core/src/generate/options.dart';
 import 'package:build_runner_core/src/generate/phase.dart';
 import 'package:build_runner_core/src/package_graph/target_graph.dart';
-import 'package:build_test/build_test.dart';
+import 'package:crypto/crypto.dart';
 import 'package:glob/glob.dart';
-import 'package:test/fake.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -26,57 +27,93 @@ void main() {
 
     setUp(() async {
       final packageGraph = buildPackageGraph({rootPackage('a'): []});
-      targetGraph = await TargetGraph.forPackageGraph(packageGraph,
-          defaultRootPackageSources: defaultNonRootVisibleAssets);
+      targetGraph = await TargetGraph.forPackageGraph(
+        packageGraph,
+        defaultRootPackageSources: defaultNonRootVisibleAssets,
+      );
 
       graph = await AssetGraph.build(
-          [], <AssetId>{}, <AssetId>{}, packageGraph, _FakeAssetReader());
+        BuildPhases([]),
+        <AssetId>{},
+        <AssetId>{},
+        packageGraph,
+        TestReaderWriter(),
+      );
     });
 
     test('can not read deleted files', () async {
       var notDeleted = makeAssetNode(
-          'a|web/a.txt', [], computeDigest(AssetId('a', 'web/a.txt'), 'a'));
+        'a|web/a.txt',
+        [],
+        computeDigest(AssetId('a', 'web/a.txt'), 'a'),
+      );
       var deleted = makeAssetNode(
-          'a|lib/b.txt', [], computeDigest(AssetId('a', 'lib/b.txt'), 'b'));
-      deleted.deletedBy.add(deleted.id.addExtension('.post_anchor.1'));
+        'a|lib/b.txt',
+        [],
+        computeDigest(AssetId('a', 'lib/b.txt'), 'b'),
+      );
+
+      deleted = deleted.rebuild(
+        (b) =>
+            b
+              ..deletedBy.add(
+                PostProcessBuildStepId(input: notDeleted.id, actionNumber: 0),
+              ),
+      );
 
       graph
         ..add(notDeleted)
         ..add(deleted);
 
-      var delegate = InMemoryAssetReader();
-      delegate.assets.addAll({notDeleted.id: [], deleted.id: []});
+      var delegate = TestReaderWriter();
+      delegate.testing.writeString(notDeleted.id, '');
+      delegate.testing.writeString(deleted.id, '');
 
-      reader = FinalizedReader(delegate, graph, targetGraph, [], 'a');
+      reader = FinalizedReader(
+        delegate,
+        graph,
+        targetGraph,
+        BuildPhases([]),
+        'a',
+      );
       expect(await reader.canRead(notDeleted.id), true);
       expect(await reader.canRead(deleted.id), false);
     });
 
     test('Failure nodes interact well with build filters ', () async {
       var id = AssetId('a', 'web/a.txt');
-      var node = GeneratedAssetNode(id,
-          state: NodeState.upToDate,
-          phaseNumber: 0,
-          wasOutput: true,
-          isFailure: true,
-          primaryInput: AssetId('a', 'web/a.dart'),
-          isHidden: true,
-          builderOptionsId: AssetId('a', 'builder_options'));
+      var node = AssetNode.generated(
+        id,
+        phaseNumber: 0,
+        result: false,
+        digest: Digest([]),
+        primaryInput: AssetId('a', 'web/a.dart'),
+        isHidden: true,
+      );
       graph.add(node);
-      var delegate = InMemoryAssetReader();
-      delegate.assets.addAll({id: []});
-      reader = FinalizedReader(delegate, graph, targetGraph,
-          [InBuildPhase(TestBuilder(), 'a', isOptional: false)], 'a')
-        ..reset({'web'}, {});
-      expect(await reader.unreadableReason(id), UnreadableReason.failed,
-          reason: 'Should report a failure if no build filters apply');
+      var delegate = TestReaderWriter();
+      delegate.testing.writeString(id, '');
+      reader = FinalizedReader(
+        delegate,
+        graph,
+        targetGraph,
+        BuildPhases([InBuildPhase(TestBuilder(), 'a', isOptional: false)]),
+        'a',
+      )..reset({'web'}, {});
+      expect(
+        await reader.unreadableReason(id),
+        UnreadableReason.failed,
+        reason: 'Should report a failure if no build filters apply',
+      );
 
       reader.reset({'web'}, {BuildFilter(Glob('b'), Glob('foo'))});
-      expect(await reader.unreadableReason(id), UnreadableReason.notOutput,
-          reason: 'Should report as not output if it doesn\'t match requested '
-              'build filters');
+      expect(
+        await reader.unreadableReason(id),
+        UnreadableReason.notOutput,
+        reason:
+            'Should report as not output if it doesn\'t match requested '
+            'build filters',
+      );
     });
   });
 }
-
-class _FakeAssetReader with Fake implements AssetReader {}

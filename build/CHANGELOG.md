@@ -1,3 +1,23 @@
+## 2.4.3-wip
+
+- `AssetNotFoundException` now also reports the missing `path`.
+- Bump the min sdk to 3.7.0.
+- Use `build_test` 3.0.0.
+- Use `build_runner_core` 9.0.0.
+- Add `package:build/src/internal.dart` for use by `build_resolvers`,
+  `build_runner_core` and `build_test`.
+- Refactor `PathProvidingAssetReader` to `AssetPathProvider`.
+- Refactor `MultiPackageAssetReader` to internal `AssetFinder`.
+- Add internal `Filesystem` that backs `AssetReader` and `AssetWriter`
+  implementations.
+- Refactor `CachingAssetReader` to `FilesystemCache`.
+- Refactor `BuildCacheReader` to `BuildCacheAssetPathProvider`.
+- Refactor `FileBasedAssetReader` and `FileBasedAssetWriter` to `ReaderWriter`.
+- Move `BuildStepImpl` to `build_runner_core`, use `SingleStepReader` directly.
+- Add `LibraryCycleGraphLoader` for loading transitive deps for analysis.
+- Track resolver dependencies as library cycle graphs.
+- Ignore deprecated analyzer API usages.
+
 ## 2.4.2
 
 - Bump the min sdk to 3.6.0.

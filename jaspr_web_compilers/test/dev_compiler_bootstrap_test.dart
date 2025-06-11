@@ -9,62 +9,118 @@ import 'package:jaspr_web_compilers/builders.dart';
 import 'package:jaspr_web_compilers/jaspr_web_compilers.dart';
 import 'package:test/test.dart';
 
-import 'util.dart';
-
 void main() {
-  late Map<String, Object> assets;
+  final startingBuilders = {
+    // Uses the real sdk copy builder to copy required files from the SDK.
+    sdkJsCopy(const BuilderOptions({})),
+    const ModuleLibraryBuilder(),
+    MetaModuleBuilder(ddcPlatform),
+    MetaModuleCleanBuilder(ddcPlatform),
+    ModuleBuilder(ddcPlatform),
+    ddcKernelBuilder(const BuilderOptions({})),
+    DevCompilerBuilder(platform: ddcPlatform),
+  };
 
   group('simple project', () {
-    setUp(() async {
-      assets = {
-        'b|lib/b.dart': '''final world = 'world';''',
-        'a|lib/a.dart': '''
+    final startingAssets = {
+      'a|lib/a.dart': '''
         import 'package:b/b.dart';
         final hello = world;
       ''',
-        'a|web/index.dart': '''
+      'a|web/index.dart': '''
         import "package:a/a.dart";
         main() {
           print(hello);
         }
       ''',
-      };
+      'b|lib/b.dart': '''final world = 'world';''',
+      // Add a fake asset so that the jaspr_web_compilers package exists.
+      'jaspr_web_compilers|fake.txt': '',
+    };
+    final startingExpectedOutputs = <String, Object>{
+      'a|lib/.ddc.meta_module.clean': isNotNull,
+      'a|lib/.ddc.meta_module.raw': isNotNull,
+      'a|lib/a.ddc.dill': isNotNull,
+      'a|lib/a.ddc.js.map': isNotNull,
+      'a|lib/a.ddc.js.metadata': isNotNull,
+      'a|lib/a.ddc.js': isNotNull,
+      'a|lib/a.ddc.module': isNotNull,
+      'a|lib/a.module.library': isNotNull,
+      'a|web/index.ddc.dill': isNotNull,
+      'a|web/index.ddc.js.map': isNotNull,
+      'a|web/index.ddc.js.metadata': isNotNull,
+      'a|web/index.ddc.js': isNotNull,
+      'a|web/index.ddc.module': isNotNull,
+      'a|web/index.module.library': isNotNull,
+      'b|lib/.ddc.meta_module.clean': isNotNull,
+      'b|lib/.ddc.meta_module.raw': isNotNull,
+      'b|lib/b.ddc.dill': isNotNull,
+      'b|lib/b.ddc.js.map': isNotNull,
+      'b|lib/b.ddc.js.metadata': isNotNull,
+      'b|lib/b.ddc.js': isNotNull,
+      'b|lib/b.ddc.module': isNotNull,
+      'b|lib/b.module.library': isNotNull,
+      'jaspr_web_compilers|lib/.ddc.meta_module.clean': isNotNull,
+      'jaspr_web_compilers|lib/.ddc.meta_module.raw': isNotNull,
+      'jaspr_web_compilers|lib/src/dev_compiler/dart_sdk.js.map': isNotNull,
+      'jaspr_web_compilers|lib/src/dev_compiler/dart_sdk.js': isNotNull,
+      'jaspr_web_compilers|lib/src/dev_compiler/require.js': isNotNull,
+    };
 
-      await runPrerequisites(assets);
+    test('base build', () async {
+      await testBuilders(
+        startingBuilders,
+        startingAssets,
+        outputs: startingExpectedOutputs,
+      );
     });
 
     test('can bootstrap dart entrypoints', () async {
       // Just do some basic sanity checking, integration tests will validate
       // things actually work.
-      var expectedOutputs = {
-        'a|web/index.digests': decodedMatches(contains('packages/')),
-        'a|web/index.dart.js': decodedMatches(contains('index.dart.bootstrap')),
+      final builder = WebEntrypointBuilder.fromOptions(
+        const BuilderOptions({
+          'compiler': 'dartdevc',
+          'native_null_assertions': false,
+        }),
+      );
+      var expectedOutputs = Map.of(startingExpectedOutputs)..addAll({
+        'a|web/index.dart.bootstrap.js': decodedMatches(
+          allOf([
+            // Maps non-lib modules to remove the top level dir.
+            contains('"web/index": "index.ddc"'),
+            // Maps lib modules to packages path
+            contains('"packages/a/a": "packages/a/a.ddc"'),
+            contains('"packages/b/b": "packages/b/b.ddc"'),
+            // Requires the top level module and dart sdk.
+            contains(
+              'define("index.dart.bootstrap", ["web/index", "dart_sdk"]',
+            ),
+            // Calls main on the top level module.
+            contains('(app.web__index || app.index).main()'),
+            isNot(contains('lib/a')),
+          ]),
+        ),
         'a|web/index.dart.ddc_merged_metadata': isNotEmpty,
-        'a|web/index.dart.bootstrap.js': decodedMatches(allOf([
-          // Maps non-lib modules to remove the top level dir.
-          contains('"web/index": "index.ddc"'),
-          // Maps lib modules to packages path
-          contains('"packages/a/a": "packages/a/a.ddc"'),
-          contains('"packages/b/b": "packages/b/b.ddc"'),
-          // Requires the top level module and dart sdk.
-          contains('define("index.dart.bootstrap", ["web/index", "dart_sdk"]'),
-          // Calls main on the top level module.
-          contains('(app.web__index || app.index).main()'),
-          isNot(contains('lib/a')),
-        ])),
-      };
-      await testBuilder(
-          WebEntrypointBuilder.fromOptions(const BuilderOptions({
-            'compiler': 'dartdevc',
-            'native_null_assertions': false,
-          })),
-          assets,
-          outputs: expectedOutputs);
+        'a|web/index.dart.js': decodedMatches(contains('index.dart.bootstrap')),
+        'a|web/index.digests': decodedMatches(contains('packages/')),
+      });
+      await testBuilders(
+        [...startingBuilders, builder],
+        startingAssets,
+        outputs: expectedOutputs,
+      );
     });
   });
   group('regression tests', () {
     test('root dart file is not the primary source, #2269', () async {
-      assets = {
+      final builder = WebEntrypointBuilder.fromOptions(
+        const BuilderOptions({
+          'compiler': 'dartdevc',
+          'native_null_assertions': false,
+        }),
+      );
+      final assets = {
         // Becomes the primary source for the module, since it we alpha-sort.
         'a|web/a.dart': '''
         final hello = 'hello';
@@ -76,78 +132,92 @@ void main() {
           print(hello);
         }
       ''',
+        // Add a fake asset so that the jaspr_web_compilers package exists.
+        'jaspr_web_compilers|fake.txt': '',
       };
-      await runPrerequisites(assets);
-
       // Check that we are invoking the correct
-      var expectedOutputs = {
-        'a|web/b.dart.bootstrap.js': decodedMatches(allOf([
-          // Confirm that `a.dart` is the actual primary source.
-          contains('"web/a": "a.ddc"'),
-          // And `b.dart` is the application, but its module is `web/a`.
-          contains('define("b.dart.bootstrap", ["web/a", "dart_sdk"]'),
-          // Calls main on the `b.dart` library, not the `a.dart` library.
-          contains('(app.web__b || app.b).main()'),
-          contains('if (childName === "b.dart")'),
-        ])),
-        'a|web/b.digests': isNotEmpty,
-        'a|web/b.dart.ddc_merged_metadata': isNotEmpty,
-        'a|web/b.dart.js': isNotEmpty,
+      final expectedOutputs = {
+        'a|lib/.ddc.meta_module.clean': isNotNull,
+        'a|lib/.ddc.meta_module.raw': isNotNull,
+        'a|web/a.ddc.dill': isNotNull,
+        'a|web/a.ddc.js.map': isNotNull,
+        'a|web/a.ddc.js.metadata': isNotNull,
+        'a|web/a.ddc.js': isNotNull,
+        'a|web/a.ddc.module': isNotNull,
+        'a|web/a.module.library': isNotNull,
+        'a|web/b.dart.bootstrap.js': decodedMatches(
+          allOf([
+            // Confirm that `a.dart` is the actual primary source.
+            contains('"web/a": "a.ddc"'),
+            // And `b.dart` is the application, but its module is `web/a`.
+            contains('define("b.dart.bootstrap", ["web/a", "dart_sdk"]'),
+            // Calls main on the `b.dart` library, not the `a.dart` library.
+            contains('(app.web__b || app.b).main()'),
+            contains('if (childName === "b.dart")'),
+          ]),
+        ),
+        'a|web/b.dart.ddc_merged_metadata': isNotNull,
+        'a|web/b.dart.js': isNotNull,
+        'a|web/b.ddc.module': isNotNull,
+        'a|web/b.digests': isNotNull,
+        'a|web/b.module.library': isNotNull,
+        'jaspr_web_compilers|lib/.ddc.meta_module.clean': isNotNull,
+        'jaspr_web_compilers|lib/.ddc.meta_module.raw': isNotNull,
+        'jaspr_web_compilers|lib/src/dev_compiler/dart_sdk.js.map': isNotNull,
+        'jaspr_web_compilers|lib/src/dev_compiler/dart_sdk.js': isNotNull,
+        'jaspr_web_compilers|lib/src/dev_compiler/require.js': isNotNull,
       };
-      await testBuilder(
-          WebEntrypointBuilder.fromOptions(const BuilderOptions({
-            'compiler': 'dartdevc',
-            'native_null_assertions': false,
-          })),
-          assets,
-          outputs: expectedOutputs);
+
+      await testBuilders(
+        [...startingBuilders, builder],
+        assets,
+        outputs: expectedOutputs,
+      );
     });
 
     test('root dart file is under lib', () async {
-      assets = {
+      final builder = WebEntrypointBuilder.fromOptions(
+        const BuilderOptions({
+          'compiler': 'dartdevc',
+          'native_null_assertions': false,
+        }),
+      );
+      final assets = {
         'a|lib/app.dart': 'void main() {}',
+        // Add a fake asset so that the jaspr_web_compilers package exists.
+        'jaspr_web_compilers|fake.txt': '',
       };
-      await runPrerequisites(assets);
-
       var expectedOutputs = {
-        'a|lib/app.dart.bootstrap.js': decodedMatches(allOf([
-          // Confirm that the child name is referenced via a package: uri
-          // and not relative path to the root dir being served.
-          contains('if (childName === "package:a/app.dart")'),
-        ])),
-        'a|lib/app.digests': isNotEmpty,
+        'a|lib/.ddc.meta_module.clean': isNotNull,
+        'a|lib/.ddc.meta_module.raw': isNotNull,
+        'a|lib/app.dart.bootstrap.js': decodedMatches(
+          allOf([
+            // Confirm that the child name is referenced via a package: uri
+            // and not relative path to the root dir being served.
+            contains('if (childName === "package:a/app.dart")'),
+          ]),
+        ),
         'a|lib/app.dart.ddc_merged_metadata': isNotEmpty,
         'a|lib/app.dart.js': isNotEmpty,
+        'a|lib/app.ddc.dill': isNotNull,
+        'a|lib/app.ddc.js.map': isNotNull,
+        'a|lib/app.ddc.js.metadata': isNotNull,
+        'a|lib/app.ddc.js': isNotNull,
+        'a|lib/app.ddc.module': isNotNull,
+        'a|lib/app.digests': isNotEmpty,
+        'a|lib/app.module.library': isNotNull,
+        'jaspr_web_compilers|lib/.ddc.meta_module.clean': isNotNull,
+        'jaspr_web_compilers|lib/.ddc.meta_module.raw': isNotNull,
+        'jaspr_web_compilers|lib/src/dev_compiler/dart_sdk.js.map': isNotNull,
+        'jaspr_web_compilers|lib/src/dev_compiler/dart_sdk.js': isNotNull,
+        'jaspr_web_compilers|lib/src/dev_compiler/require.js': isNotNull,
       };
-      await testBuilder(
-          WebEntrypointBuilder.fromOptions(const BuilderOptions({
-            'compiler': 'dartdevc',
-            'native_null_assertions': false,
-          })),
-          assets,
-          outputs: expectedOutputs);
+
+      await testBuilders(
+        [...startingBuilders, builder],
+        assets,
+        outputs: expectedOutputs,
+      );
     });
   });
-}
-
-// Runs all the DDC related builders except the entrypoint builder.
-Future<void> runPrerequisites(Map<String, Object> assets) async {
-  // Uses the real sdk copy builder to copy required files from the SDK.
-  //
-  // It is necessary to add a fake asset so that the jaspr_web_compilers
-  // package exists.
-  var sdkAssets = <String, Object>{'jaspr_web_compilers|fake.txt': ''};
-  await testBuilderAndCollectAssets(
-      sdkJsCopy(const BuilderOptions({})), sdkAssets);
-  assets.addAll(sdkAssets);
-
-  await testBuilderAndCollectAssets(const ModuleLibraryBuilder(), assets);
-  await testBuilderAndCollectAssets(MetaModuleBuilder(ddcPlatform), assets);
-  await testBuilderAndCollectAssets(
-      MetaModuleCleanBuilder(ddcPlatform), assets);
-  await testBuilderAndCollectAssets(ModuleBuilder(ddcPlatform), assets);
-  await testBuilderAndCollectAssets(
-      ddcKernelBuilder(const BuilderOptions({})), assets);
-  await testBuilderAndCollectAssets(
-      DevCompilerBuilder(platform: ddcPlatform), assets);
 }

@@ -1,4 +1,28 @@
-## 2.4.4-wip
+## 2.4.5-wip
+
+- Bump the min SDK to 3.7.0.
+- Use `build_test` 3.0.0.
+- Use `build_runner_core` 9.0.0.
+- Use new resolver always; remove `--use-experimental-resolver` flag.
+- Start using `package:build/src/internal.dart`.
+- Switch `BuildAssetUriResolver` dependency crawl to an iterative
+  algorithm, preventing stack overflows.
+- Move `BuildStepImpl` to `build_runner_core`, use `SingleStepReader` directly.
+- Stop building `transitive_digest` files by default.
+- Use `LibraryCycleGraphLoader` to load transitive deps for analysis.
+- Bug fix: fix delay on shutdown for fast builds when the "analyzer out of
+  date" warning is displayed.
+- Track resolver dependencies as library cycle graphs.
+- Ignore deprecated analyzer API usages.
+
+## 2.4.4
+
+- Refactor `BuildAssetUriResolver` into `AnalysisDriverModel` and
+  `AnalysisDriverFilesystem`. Add new implementation of
+  `AnalysisDriverModel`.
+- Make resolver only throw `SyntaxErrorInAssetException` on severe syntax errors
+- Add `BuildAssetUriResolver.useExperimentalResolver` for
+  `--use-experimental-resolver` flag. This will be removed.
 
 ## 2.4.3
 

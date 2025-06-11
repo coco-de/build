@@ -3,27 +3,33 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import 'dart:async';
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:build/build.dart';
 import 'package:build/experiments.dart' as experiments_zone;
-import 'package:convert/convert.dart';
+// ignore: implementation_imports
+import 'package:build/src/internal.dart';
+import 'package:built_collection/built_collection.dart';
+import 'package:built_value/serializer.dart';
 import 'package:crypto/crypto.dart';
-import 'package:glob/glob.dart';
+import 'package:meta/meta.dart';
 import 'package:package_config/package_config.dart';
 import 'package:watcher/watcher.dart';
 
+import '../../build_runner_core.dart';
+import '../generate/build_phases.dart';
 import '../generate/phase.dart';
-import '../package_graph/package_graph.dart';
+import '../util/constants.dart';
 import 'exceptions.dart';
 import 'node.dart';
+import 'post_process_build_step_id.dart';
+import 'serializers.dart';
 
 part 'serialization.dart';
 
 /// All the [AssetId]s involved in a build, and all of their outputs.
-class AssetGraph {
+class AssetGraph implements GeneratedAssetHider {
   /// All the [AssetNode]s in the graph, indexed by package and then path.
   final _nodesByPackage = <String, Map<String, AssetNode>>{};
 
@@ -38,49 +44,104 @@ class AssetGraph {
 
   /// The Dart language experiments that were enabled when this graph was
   /// originally created from the [build] constructor.
-  final List<String> enabledExperiments;
+  final BuiltList<String> enabledExperiments;
 
-  final Map<String, LanguageVersion?> packageLanguageVersions;
+  final BuiltMap<String, LanguageVersion?> packageLanguageVersions;
 
-  AssetGraph._(this.buildPhasesDigest, this.dartVersion,
-      this.packageLanguageVersions, this.enabledExperiments);
+  /// The result of [computeOutputs] for reuse, or `null` if outputs have not
+  /// been computed.
+  Map<AssetId, Set<AssetId>>? _outputs;
+
+  /// All post process build steps outputs, indexed by package then
+  /// [PostProcessBuildStepId].
+  ///
+  /// Created with empty outputs at the start of the build if it's a new build
+  /// step; or deserialized with previous build outputs if it has run before.
+  final Map<String, Map<PostProcessBuildStepId, Set<AssetId>>>
+  _postProcessBuildStepOutputs = {};
+
+  /// Digests from the previous build's [BuildPhases], or `null` if this is a
+  /// clean build.
+  BuiltList<Digest>? previousInBuildPhasesOptionsDigests;
+
+  /// Digests from the current build's [BuildPhases].
+  BuiltList<Digest> inBuildPhasesOptionsDigests;
+
+  /// Digests from the previous build's [BuildPhases], or `null` if this is a
+  /// clean build.
+  BuiltList<Digest>? previousPostBuildActionsOptionsDigests;
+
+  /// Digests from the current build's [BuildPhases].
+  BuiltList<Digest> postBuildActionsOptionsDigests;
+
+  /// Imports of resolved assets in the previous build, or `null` if this is a
+  /// clean build.
+  PhasedAssetDeps? previousPhasedAssetDeps;
+
+  AssetGraph._(
+    BuildPhases buildPhases,
+    this.dartVersion,
+    this.packageLanguageVersions,
+    this.enabledExperiments,
+  ) : buildPhasesDigest = buildPhases.digest,
+      inBuildPhasesOptionsDigests = buildPhases.inBuildPhasesOptionsDigests,
+      postBuildActionsOptionsDigests =
+          buildPhases.postBuildActionsOptionsDigests;
+
+  AssetGraph._fromSerialized(
+    this.buildPhasesDigest,
+    this.inBuildPhasesOptionsDigests,
+    this.postBuildActionsOptionsDigests,
+    this.dartVersion,
+    this.packageLanguageVersions,
+    this.enabledExperiments,
+  );
 
   /// Deserializes this graph.
   factory AssetGraph.deserialize(List<int> serializedGraph) =>
-      _AssetGraphDeserializer(serializedGraph).deserialize();
+      deserializeAssetGraph(serializedGraph);
 
   static Future<AssetGraph> build(
-      List<BuildPhase> buildPhases,
-      Set<AssetId> sources,
-      Set<AssetId> internalSources,
-      PackageGraph packageGraph,
-      AssetReader digestReader) async {
-    var packageLanguageVersions = {
-      for (var pkg in packageGraph.allPackages.values)
-        pkg.name: pkg.languageVersion
-    };
+    BuildPhases buildPhases,
+    Set<AssetId> sources,
+    Set<AssetId> internalSources,
+    PackageGraph packageGraph,
+    AssetReader digestReader,
+  ) async {
     var graph = AssetGraph._(
-        computeBuildPhasesDigest(buildPhases),
-        Platform.version,
-        packageLanguageVersions,
-        experiments_zone.enabledExperiments);
+      buildPhases,
+      Platform.version,
+      packageGraph.languageVersions,
+      experiments_zone.enabledExperiments.build(),
+    );
     var placeholders = graph._addPlaceHolderNodes(packageGraph);
-    var sourceNodes = graph._addSources(sources);
-    graph
-      .._addBuilderOptionsNodes(buildPhases)
-      .._addOutputsForSources(buildPhases, sources, packageGraph.root.name,
-          placeholders: placeholders);
+    graph._addSources(sources);
+    graph._addOutputsForSources(
+      buildPhases,
+      sources,
+      packageGraph.root.name,
+      placeholders: placeholders,
+    );
     // Pre-emptively compute digests for the nodes we know have outputs.
-    await graph._setLastKnownDigests(
-        sourceNodes.where((node) => node.primaryOutputs.isNotEmpty),
-        digestReader);
+    await graph._setDigests(
+      sources.where((id) => graph.get(id)!.primaryOutputs.isNotEmpty),
+      digestReader,
+    );
     // Always compute digests for all internal nodes.
-    var internalNodes = graph._addInternalSources(internalSources);
-    await graph._setLastKnownDigests(internalNodes, digestReader);
+    graph._addInternalSources(internalSources);
+    await graph._setDigests(internalSources, digestReader);
     return graph;
   }
 
-  List<int> serialize() => _AssetGraphSerializer(this).serialize();
+  List<int> serialize() => serializeAssetGraph(this);
+
+  @visibleForTesting
+  Map<String, Map<PostProcessBuildStepId, Set<AssetId>>>
+  get allPostProcessBuildStepOutputs => _postProcessBuildStepOutputs;
+
+  /// Whether this is a clean build, meaning there was no previous build state
+  /// loaded or it was discarded as incompatible.
+  bool get cleanBuild => previousInBuildPhasesOptionsDigests == null;
 
   /// Checks if [id] exists in the graph.
   bool contains(AssetId id) =>
@@ -93,129 +154,151 @@ class AssetGraph {
     return pkg[id.path];
   }
 
+  /// Updates a node in the graph with [updates].
+  ///
+  /// If it does not exist, [StateError] is thrown.
+  ///
+  /// Returns the updated node.
+  AssetNode updateNode(AssetId id, void Function(AssetNodeBuilder) updates) {
+    final node = get(id);
+    if (node == null) throw StateError('Missing node: $id');
+    final updatedNode = node.rebuild(updates);
+    _nodesByPackage[id.package]![id.path] = updatedNode;
+
+    if (node.inputs != updatedNode.inputs) {
+      _outputs = null;
+    }
+
+    return updatedNode;
+  }
+
+  /// Updates a node in the graph with [updates].
+  ///
+  /// If it does not exist, does nothing and returns `null`.
+  ///
+  /// If it does exist, returns the updated node.
+  AssetNode? updateNodeIfPresent(
+    AssetId id,
+    void Function(AssetNodeBuilder) updates,
+  ) {
+    final node = get(id);
+    if (node == null) return null;
+    final updatedNode = node.rebuild(updates);
+    _nodesByPackage[id.package]![id.path] = updatedNode;
+
+    if (node.inputs != updatedNode.inputs) {
+      _outputs = null;
+    }
+
+    return updatedNode;
+  }
+
   /// Adds [node] to the graph if it doesn't exist.
   ///
   /// Throws a [StateError] if it already exists in the graph.
-  void _add(AssetNode node) {
+  ///
+  /// Returns the updated node: if it replaces an [AssetNode.missingSource] then
+  /// `outputs` and `primaryOutputs` are copied to it from that.
+  AssetNode _add(AssetNode node) {
     var existing = get(node.id);
     if (existing != null) {
-      if (existing is SyntheticSourceAssetNode) {
-        // Don't call _removeRecursive, that recursively removes all transitive
-        // primary outputs. We only want to remove this node.
+      if (existing.type == NodeType.missingSource) {
         _nodesByPackage[existing.id.package]!.remove(existing.id.path);
-        node.outputs.addAll(existing.outputs);
-        node.primaryOutputs.addAll(existing.primaryOutputs);
+        node = node.rebuild((b) {
+          b.primaryOutputs.addAll(existing.primaryOutputs);
+        });
       } else {
         throw StateError(
-            'Tried to add node ${node.id} to the asset graph but it already '
-            'exists.');
+          'Tried to add node ${node.id} to the asset graph but it already '
+          'exists.',
+        );
       }
     }
     _nodesByPackage.putIfAbsent(node.id.package, () => {})[node.id.path] = node;
+    if (node.inputs?.isNotEmpty ?? false) {
+      _outputs = null;
+    }
+
+    return node;
   }
 
-  /// Adds [assetIds] as [InternalAssetNode]s to this graph.
-  Iterable<AssetNode> _addInternalSources(Set<AssetId> assetIds) sync* {
+  /// Adds [assetIds] as [AssetNode.internal].
+  void _addInternalSources(Set<AssetId> assetIds) {
     for (var id in assetIds) {
-      var node = InternalAssetNode(id);
-      _add(node);
-      yield node;
+      _add(AssetNode.internal(id));
     }
   }
 
-  /// Adds [PlaceHolderAssetNode]s for every package in [packageGraph].
+  /// Adds [AssetNode.placeholder]s for every package in [packageGraph].
   Set<AssetId> _addPlaceHolderNodes(PackageGraph packageGraph) {
     var placeholders = placeholderIdsFor(packageGraph);
     for (var id in placeholders) {
-      _add(PlaceHolderAssetNode(id));
+      _add(AssetNode.placeholder(id));
     }
     return placeholders;
   }
 
-  /// Adds [assetIds] as [AssetNode]s to this graph, and returns the newly
+  /// Adds [assetIds] as [AssetNode.source] to this graph, and returns the newly
   /// created nodes.
-  List<AssetNode> _addSources(Set<AssetId> assetIds) {
-    return assetIds.map((id) {
-      var node = SourceAssetNode(id);
-      _add(node);
-      return node;
-    }).toList();
-  }
-
-  /// Adds [BuilderOptionsAssetNode]s for all [buildPhases] to this graph.
-  void _addBuilderOptionsNodes(List<BuildPhase> buildPhases) {
-    for (var phaseNum = 0; phaseNum < buildPhases.length; phaseNum++) {
-      var phase = buildPhases[phaseNum];
-      if (phase is InBuildPhase) {
-        add(BuilderOptionsAssetNode(builderOptionsIdForAction(phase, phaseNum),
-            computeBuilderOptionsDigest(phase.builderOptions)));
-      } else if (phase is PostBuildPhase) {
-        var actionNum = 0;
-        for (var builderAction in phase.builderActions) {
-          add(BuilderOptionsAssetNode(
-              builderOptionsIdForAction(builderAction, actionNum),
-              computeBuilderOptionsDigest(builderAction.builderOptions)));
-          actionNum++;
-        }
-      } else {
-        throw StateError('Invalid action type $phase');
-      }
+  void _addSources(Set<AssetId> assetIds) {
+    for (final id in assetIds) {
+      _add(AssetNode.source(id));
     }
   }
 
-  /// Uses [digestReader] to compute the [Digest] for [nodes] and set the
-  /// `lastKnownDigest` field.
-  Future<void> _setLastKnownDigests(
-      Iterable<AssetNode> nodes, AssetReader digestReader) async {
-    await Future.wait(nodes.map((node) async {
-      node.lastKnownDigest = await digestReader.digest(node.id);
-    }));
+  /// Uses [digestReader] to compute the [Digest] for nodes with [ids] and set
+  /// the `lastKnownDigest` field.
+  Future<void> _setDigests(
+    Iterable<AssetId> ids,
+    AssetReader digestReader,
+  ) async {
+    for (final id in ids) {
+      final digest = await digestReader.digest(id);
+      updateNode(id, (nodeBuilder) {
+        nodeBuilder.digest = digest;
+      });
+    }
   }
 
-  /// Removes the node representing [id] from the graph, and all of its
-  /// `primaryOutput`s.
-  ///
-  /// Also removes all edges between all removed nodes and remaining nodes.
-  ///
-  /// Returns the IDs of removed asset nodes.
-  Set<AssetId> _removeRecursive(AssetId id, {Set<AssetId>? removedIds}) {
+  /// Changes [id] and its transitive`primaryOutput`s to `missingSource` nodes.
+  void _setMissingRecursive(AssetId id, {Set<AssetId>? removedIds}) {
     removedIds ??= <AssetId>{};
     var node = get(id);
-    if (node == null) return removedIds;
+    if (node == null) return;
     removedIds.add(id);
-    for (var anchor in node.anchorOutputs.toList()) {
-      _removeRecursive(anchor, removedIds: removedIds);
-    }
     for (var output in node.primaryOutputs.toList()) {
-      _removeRecursive(output, removedIds: removedIds);
+      _setMissingRecursive(output, removedIds: removedIds);
     }
-    for (var output in node.outputs) {
-      var inputsNode = get(output) as NodeWithInputs?;
-      if (inputsNode != null) {
-        inputsNode.inputs.remove(id);
-        if (inputsNode is GlobAssetNode) {
-          inputsNode.results?.remove(id);
+    updateNode(id, (nodeBuilder) {
+      nodeBuilder.replace(AssetNode.missingSource(id));
+    });
+
+    // Remove post build action applications with removed assets as inputs.
+    for (final packageOutputs in _postProcessBuildStepOutputs.values) {
+      packageOutputs.removeWhere((id, _) => removedIds!.contains(id.input));
+    }
+  }
+
+  /// Computes node outputs: the inverse of the graph described by the `inputs`
+  /// fields on glob and generated nodes.
+  ///
+  /// The result is cached until any node is updated with different `inputs` or
+  /// [updateAndInvalidate] is called.
+  Map<AssetId, Set<AssetId>> computeOutputs() {
+    if (_outputs != null) return _outputs!;
+    final result = <AssetId, Set<AssetId>>{};
+    for (final node in allNodes) {
+      if (node.type == NodeType.generated) {
+        for (final input in node.generatedNodeState!.inputs) {
+          result.putIfAbsent(input, () => {}).add(node.id);
+        }
+      } else if (node.type == NodeType.glob) {
+        for (final input in node.globNodeState!.inputs) {
+          result.putIfAbsent(input, () => {}).add(node.id);
         }
       }
     }
-    if (node is NodeWithInputs) {
-      for (var input in node.inputs) {
-        var inputNode = get(input);
-        // We may have already removed this node entirely.
-        if (inputNode != null) {
-          inputNode.outputs.remove(id);
-          inputNode.primaryOutputs.remove(id);
-        }
-      }
-      if (node is GeneratedAssetNode) {
-        get(node.builderOptionsId)!.outputs.remove(id);
-      }
-    }
-    // Synthetic nodes need to be kept to retain dependency tracking.
-    if (node is! SyntheticSourceAssetNode) {
-      _nodesByPackage[id.package]!.remove(id.path);
-    }
-    return removedIds;
+    return _outputs = result;
   }
 
   /// All nodes in the graph, whether source files or generated outputs.
@@ -226,38 +309,61 @@ class AssetGraph {
   Iterable<AssetNode> packageNodes(String package) =>
       _nodesByPackage[package]?.values ?? [];
 
+  /// All the post process build steps for `package`.
+  Iterable<PostProcessBuildStepId> postProcessBuildStepIds({
+    required String package,
+  }) => _postProcessBuildStepOutputs[package]?.keys ?? const [];
+
+  /// Creates or updates state for a [PostProcessBuildStepId].
+  void updatePostProcessBuildStep(
+    PostProcessBuildStepId buildStepId, {
+    required Set<AssetId> outputs,
+  }) {
+    _postProcessBuildStepOutputs.putIfAbsent(
+          buildStepId.input.package,
+          () => {},
+        )[buildStepId] =
+        outputs;
+  }
+
+  /// Gets outputs of a [PostProcessBuildStepId].
+  ///
+  /// These are set using [updatePostProcessBuildStep] during the build, then
+  /// used to clean up prior outputs in the next build.
+  Iterable<AssetId> postProcessBuildStepOutputs(PostProcessBuildStepId action) {
+    return _postProcessBuildStepOutputs[action.input.package]![action]!;
+  }
+
   /// All the generated outputs in the graph.
   Iterable<AssetId> get outputs =>
-      allNodes.where((n) => n.isGenerated).map((n) => n.id);
-
-  /// The outputs which were, or would have been, produced by failing actions.
-  Iterable<GeneratedAssetNode> get failedOutputs => allNodes
-      .where((n) =>
-          n is GeneratedAssetNode &&
-          n.isFailure &&
-          n.state == NodeState.upToDate)
-      .map((n) => n as GeneratedAssetNode);
+      allNodes.where((n) => n.type == NodeType.generated).map((n) => n.id);
 
   /// All the generated outputs for a particular phase.
-  Iterable<GeneratedAssetNode> outputsForPhase(String package, int phase) =>
-      packageNodes(package)
-          .whereType<GeneratedAssetNode>()
-          .where((n) => n.phaseNumber == phase);
+  Iterable<AssetNode> outputsForPhase(String package, int phase) =>
+      packageNodes(package).where(
+        (n) =>
+            n.type == NodeType.generated &&
+            n.generatedNodeConfiguration!.phaseNumber == phase,
+      );
 
   /// All the source files in the graph.
   Iterable<AssetId> get sources =>
-      allNodes.whereType<SourceAssetNode>().map((n) => n.id);
+      allNodes.where((n) => n.type == NodeType.source).map((n) => n.id);
 
   /// Updates graph structure, invalidating and deleting any outputs that were
   /// affected.
   ///
-  /// Returns the list of [AssetId]s that were invalidated.
+  /// Outputs that are deleted from the filesystem are retained in the graph as
+  /// `missingSource` nodes.
+  ///
+  /// Returns the set of [AssetId]s that were deleted.
   Future<Set<AssetId>> updateAndInvalidate(
-      List<BuildPhase> buildPhases,
-      Map<AssetId, ChangeType> updates,
-      String rootPackage,
-      Future Function(AssetId id) delete,
-      AssetReader digestReader) async {
+    BuildPhases buildPhases,
+    Map<AssetId, ChangeType> updates,
+    String rootPackage,
+    Future Function(AssetId id) delete,
+    AssetReader digestReader,
+  ) async {
     var newIds = <AssetId>{};
     var modifyIds = <AssetId>{};
     var removeIds = <AssetId>{};
@@ -276,23 +382,26 @@ class AssetGraph {
       }
     });
 
+    _addSources(newIds);
+
     var newAndModifiedNodes = [
-      for (var id in modifyIds) get(id)!,
-      ..._addSources(newIds),
+      for (var id in modifyIds.followedBy(newIds)) get(id)!,
     ];
     // Pre-emptively compute digests for the new and modified nodes we know have
     // outputs.
-    await _setLastKnownDigests(
-        newAndModifiedNodes.where((node) =>
-            node.isValidInput &&
-            (node.outputs.isNotEmpty ||
-                node.primaryOutputs.isNotEmpty ||
-                node.lastKnownDigest != null)),
-        digestReader);
+    await _setDigests(
+      newAndModifiedNodes
+          .where(
+            (node) =>
+                node.isTrackedInput &&
+                (node.primaryOutputs.isNotEmpty || node.digest != null),
+          )
+          .map((node) => node.id),
+      digestReader,
+    );
 
-    // Collects the set of all transitive ids to be removed from the graph,
-    // based on the removed `SourceAssetNode`s by following the
-    // `primaryOutputs`.
+    // Compute generated nodes that will no longer be output because their
+    // primary input was deleted. Delete them.
     var transitiveRemovedIds = <AssetId>{};
     void addTransitivePrimaryOutputs(AssetId id) {
       if (transitiveRemovedIds.add(id)) {
@@ -300,74 +409,30 @@ class AssetGraph {
       }
     }
 
-    removeIds
-        .where((id) => get(id) is SourceAssetNode)
-        .forEach(addTransitivePrimaryOutputs);
-
-    // The generated nodes to actually delete from the file system.
+    for (final id in removeIds) {
+      final node = get(id);
+      if (node != null && node.type == NodeType.source) {
+        addTransitivePrimaryOutputs(id);
+      }
+    }
     var idsToDelete = Set<AssetId>.from(transitiveRemovedIds)
       ..removeAll(removeIds);
-
-    // We definitely need to update manually deleted outputs.
-    for (var deletedOutput
-        in removeIds.map(get).whereType<GeneratedAssetNode>()) {
-      deletedOutput.state = NodeState.definitelyNeedsUpdate;
-    }
-
-    // Transitively invalidates all assets. This needs to happen after the
-    // structure of the graph has been updated.
-    var invalidatedIds = <AssetId>{};
-
-    var newGeneratedOutputs =
-        _addOutputsForSources(buildPhases, newIds, rootPackage);
-    var allNewAndDeletedIds = {...newGeneratedOutputs, ...transitiveRemovedIds};
-
-    void invalidateNodeAndDeps(AssetId id) {
-      var node = get(id);
-      if (node == null) return;
-      if (!invalidatedIds.add(id)) return;
-
-      if (node is NodeWithInputs && node.state == NodeState.upToDate) {
-        node.state = NodeState.mayNeedUpdate;
-      }
-
-      // Update all outputs of this asset as well.
-      for (var output in node.outputs) {
-        invalidateNodeAndDeps(output);
-      }
-    }
-
-    for (var changed in updates.keys.followedBy(newGeneratedOutputs)) {
-      invalidateNodeAndDeps(changed);
-    }
-
-    // For all new or deleted assets, check if they match any glob nodes and
-    // invalidate those.
-    for (var id in allNewAndDeletedIds) {
-      var samePackageGlobNodes = packageNodes(id.package)
-          .whereType<GlobAssetNode>()
-          .where((n) => n.state == NodeState.upToDate);
-      for (final node in samePackageGlobNodes) {
-        if (node.glob.matches(id.path)) {
-          invalidateNodeAndDeps(node.id);
-          node.state = NodeState.mayNeedUpdate;
-        }
-      }
-    }
-
-    // Delete all the invalidated assets, then remove them from the graph. This
-    // order is important because some `AssetWriter`s throw if the id is not in
-    // the graph.
     await Future.wait(idsToDelete.map(delete));
 
-    // Remove all deleted source assets from the graph, which also recursively
-    // removes all their primary outputs.
-    for (var id in removeIds.where((id) => get(id) is SourceAssetNode)) {
-      invalidateNodeAndDeps(id);
-      _removeRecursive(id);
+    // Change deleted source assets and their transitive primary outputs to
+    // `missingSource` nodes, rather than deleting them. This allows them to
+    // remain referenced in `inputs` in order to trigger rebuilds if necessary.
+    for (final id in removeIds) {
+      final node = get(id);
+      if (node != null && node.type == NodeType.source) {
+        _setMissingRecursive(id);
+      }
     }
 
-    return invalidatedIds;
+    _addOutputsForSources(buildPhases, newIds, rootPackage);
+
+    _outputs = null;
+    return idsToDelete;
   }
 
   /// Crawl up primary inputs to see if the original Source file matches the
@@ -387,11 +452,12 @@ class AssetGraph {
       throw StateError('Unrecognized action type $action');
     }
 
-    var inputNode = get(input);
-    while (inputNode is GeneratedAssetNode) {
-      inputNode = get(inputNode.primaryInput);
+    var inputNode = get(input)!;
+    while (inputNode.type == NodeType.generated) {
+      final inputNodeConfiguration = inputNode.generatedNodeConfiguration!;
+      inputNode = get(inputNodeConfiguration.primaryInput)!;
     }
-    return action.targetSources.matches(inputNode!.id);
+    return action.targetSources.matches(inputNode.id);
   }
 
   /// Returns a set containing [newSources] plus any new generated sources
@@ -400,59 +466,65 @@ class AssetGraph {
   ///
   /// If [placeholders] is supplied they will be added to [newSources] to create
   /// the full input set.
-  Set<AssetId> _addOutputsForSources(
-      List<BuildPhase> buildPhases, Set<AssetId> newSources, String rootPackage,
-      {Set<AssetId>? placeholders}) {
+  void _addOutputsForSources(
+    BuildPhases buildPhases,
+    Set<AssetId> newSources,
+    String rootPackage, {
+    Set<AssetId>? placeholders,
+  }) {
     var allInputs = Set<AssetId>.from(newSources);
     if (placeholders != null) allInputs.addAll(placeholders);
-
-    for (var phaseNum = 0; phaseNum < buildPhases.length; phaseNum++) {
-      var phase = buildPhases[phaseNum];
-      if (phase is InBuildPhase) {
-        allInputs.addAll(_addInBuildPhaseOutputs(
-          phase,
+    for (
+      var phaseNum = 0;
+      phaseNum < buildPhases.inBuildPhases.length;
+      phaseNum++
+    ) {
+      allInputs.addAll(
+        _addInBuildPhaseOutputs(
+          buildPhases.inBuildPhases[phaseNum],
           phaseNum,
           allInputs,
           buildPhases,
           rootPackage,
-        ));
-      } else if (phase is PostBuildPhase) {
-        _addPostBuildPhaseAnchors(phase, allInputs);
-      } else {
-        throw StateError('Unrecognized phase type $phase');
-      }
+        ),
+      );
     }
-    return allInputs;
+    _addPostBuildActionApplications(buildPhases.postBuildPhase, allInputs);
   }
 
-  /// Adds all [GeneratedAssetNode]s for [phase] given [allInputs].
+  /// Adds all [AssetNode.generated]s for [phase] given [allInputs].
   ///
   /// May remove some items from [allInputs], if they are deemed to actually be
   /// outputs of this phase and not original sources.
   ///
   /// Returns all newly created asset ids.
   Set<AssetId> _addInBuildPhaseOutputs(
-      InBuildPhase phase,
-      int phaseNum,
-      Set<AssetId> allInputs,
-      List<BuildPhase> buildPhases,
-      String rootPackage) {
+    InBuildPhase phase,
+    int phaseNum,
+    Set<AssetId> allInputs,
+    BuildPhases buildPhases,
+    String rootPackage,
+  ) {
     var phaseOutputs = <AssetId>{};
-    var buildOptionsNodeId = builderOptionsIdForAction(phase, phaseNum);
-    var builderOptionsNode = get(buildOptionsNodeId) as BuilderOptionsAssetNode;
     var inputs =
         allInputs.where((input) => _actionMatches(phase, input)).toList();
     for (var input in inputs) {
       // We might have deleted some inputs during this loop, if they turned
       // out to be generated assets.
       if (!allInputs.contains(input)) continue;
-      var node = get(input)!;
       var outputs = expectedOutputs(phase.builder, input);
       phaseOutputs.addAll(outputs);
-      node.primaryOutputs.addAll(outputs);
+      updateNode(input, (nodeBuilder) {
+        nodeBuilder.primaryOutputs.addAll(outputs);
+      });
       var deleted = _addGeneratedOutputs(
-          outputs, phaseNum, builderOptionsNode, buildPhases, rootPackage,
-          primaryInput: input, isHidden: phase.hideOutput);
+        outputs,
+        phaseNum,
+        buildPhases,
+        rootPackage,
+        primaryInput: input,
+        isHidden: phase.hideOutput,
+      );
       allInputs.removeAll(deleted);
       // We may delete source nodes that were producing outputs previously.
       // Detect this by checking for deleted nodes that no longer exist in the
@@ -462,72 +534,73 @@ class AssetGraph {
     return phaseOutputs;
   }
 
-  /// Adds all [PostProcessAnchorNode]s for [phase] given [allInputs];
-  ///
-  /// Does not return anything because [PostProcessAnchorNode]s are synthetic
-  /// and should not be treated as inputs.
-  void _addPostBuildPhaseAnchors(PostBuildPhase phase, Set<AssetId> allInputs) {
-    var actionNum = 0;
+  /// Adds all [PostProcessBuildStepId]s for [phase] given [allInputs];
+  void _addPostBuildActionApplications(
+    PostBuildPhase phase,
+    Set<AssetId> allInputs,
+  ) {
+    var actionNumber = 0;
     for (var action in phase.builderActions) {
       var inputs = allInputs.where((input) => _actionMatches(action, input));
       for (var input in inputs) {
-        var buildOptionsNodeId = builderOptionsIdForAction(action, actionNum);
-        var anchor = PostProcessAnchorNode.forInputAndAction(
-            input, actionNum, buildOptionsNodeId);
-        add(anchor);
-        get(input)!.anchorOutputs.add(anchor.id);
+        updatePostProcessBuildStep(
+          PostProcessBuildStepId(input: input, actionNumber: actionNumber),
+          outputs: {},
+        );
       }
-      actionNum++;
+      actionNumber++;
     }
   }
 
-  /// Adds [outputs] as [GeneratedAssetNode]s to the graph.
+  /// Adds [outputs] as [AssetNode.generated]s to the graph.
   ///
-  /// If there are existing [SourceAssetNode]s or [SyntheticSourceAssetNode]s
-  /// that overlap the [GeneratedAssetNode]s, then they will be replaced with
-  /// [GeneratedAssetNode]s, and all their `primaryOutputs` will be removed
-  /// from the graph as well. The return value is the set of assets that were
-  /// removed from the graph.
+  /// If there are existing [AssetNode.source]s or [AssetNode.missingSource]s
+  /// that overlap the [AssetNode.generated]s, then they will be replaced with
+  /// [AssetNode.generated]s, and their transitive `primaryOutputs` will be
+  /// changed to `missingSource` nodes. The return value is the set of assets
+  /// that were removed from the graph.
   Set<AssetId> _addGeneratedOutputs(
-      Iterable<AssetId> outputs,
-      int phaseNumber,
-      BuilderOptionsAssetNode builderOptionsNode,
-      List<BuildPhase> buildPhases,
-      String rootPackage,
-      {required AssetId primaryInput,
-      required bool isHidden}) {
+    Iterable<AssetId> outputs,
+    int phaseNumber,
+    BuildPhases buildPhases,
+    String rootPackage, {
+    required AssetId primaryInput,
+    required bool isHidden,
+  }) {
     var removed = <AssetId>{};
+    Map<AssetId, Set<AssetId>>? computedOutputsBeforeRemoves;
     for (var output in outputs) {
       AssetNode? existing;
       // When any outputs aren't hidden we can pick up old generated outputs as
       // regular `AssetNode`s, we need to delete them and all their primary
       // outputs, and replace them with a `GeneratedAssetNode`.
       if (contains(output)) {
+        computedOutputsBeforeRemoves = computeOutputs();
         existing = get(output)!;
-        if (existing is GeneratedAssetNode) {
+        if (existing.type == NodeType.generated) {
+          final existingConfiguration = existing.generatedNodeConfiguration!;
           throw DuplicateAssetNodeException(
-              rootPackage,
-              existing.id,
-              (buildPhases[existing.phaseNumber] as InBuildPhase).builderLabel,
-              (buildPhases[phaseNumber] as InBuildPhase).builderLabel);
+            rootPackage,
+            existing.id,
+            buildPhases
+                .inBuildPhases[existingConfiguration.phaseNumber]
+                .builderLabel,
+            buildPhases.inBuildPhases[phaseNumber].builderLabel,
+          );
         }
-        _removeRecursive(output, removedIds: removed);
+        _setMissingRecursive(output, removedIds: removed);
       }
 
-      var newNode = GeneratedAssetNode(output,
-          phaseNumber: phaseNumber,
-          primaryInput: primaryInput,
-          state: NodeState.definitelyNeedsUpdate,
-          wasOutput: false,
-          isFailure: false,
-          builderOptionsId: builderOptionsNode.id,
-          isHidden: isHidden);
+      var newNode = AssetNode.generated(
+        output,
+        phaseNumber: phaseNumber,
+        primaryInput: primaryInput,
+        isHidden: isHidden,
+      );
       if (existing != null) {
-        newNode.outputs.addAll(existing.outputs);
         // Ensure we set up the reverse link for NodeWithInput nodes.
-        _addInput(existing.outputs, output);
+        _addInput(computedOutputsBeforeRemoves![output] ?? <AssetId>{}, output);
       }
-      builderOptionsNode.outputs.add(output);
       _add(newNode);
     }
     return removed;
@@ -536,47 +609,88 @@ class AssetGraph {
   @override
   String toString() => allNodes.toList().toString();
 
-  // TODO remove once tests are updated
   void add(AssetNode node) => _add(node);
-  Set<AssetId> remove(AssetId id) => _removeRecursive(id);
 
-  /// Adds [input] to all [outputs] if they represent [NodeWithInputs] nodes.
+  /// Removes a generated node that was output by a post process build step.
+  /// TODO(davidmorgan): look at removing them from the graph altogether.
+  void removePostProcessOutput(AssetId id) {
+    _nodesByPackage[id.package]!.remove(id.path);
+  }
+
+  void removeForTest(AssetId id) =>
+      _nodesByPackage[id.package]?.remove(id.path);
+
+  /// Adds [input] to all [outputs] if they track inputs.
+  ///
+  /// Nodes that track inputs are [AssetNode.generated] or [AssetNode.glob].
   void _addInput(Iterable<AssetId> outputs, AssetId input) {
     for (var output in outputs) {
-      var node = get(output);
-      if (node is NodeWithInputs) node.inputs.add(input);
+      updateNodeIfPresent(output, (nodeBuilder) {
+        if (nodeBuilder.type == NodeType.generated) {
+          nodeBuilder.generatedNodeState.inputs.add(input);
+        } else if (nodeBuilder.type == NodeType.glob) {
+          nodeBuilder.globNodeState.inputs.add(input);
+        }
+      });
     }
   }
-}
 
-/// Computes a [Digest] for [buildPhases] which can be used to compare one set
-/// of [BuildPhase]s against another.
-Digest computeBuildPhasesDigest(Iterable<BuildPhase> buildPhases) {
-  var digestSink = AccumulatorSink<Digest>();
-  md5.startChunkedConversion(digestSink)
-    ..add(buildPhases.map((phase) => phase.identity).toList())
-    ..close();
-  assert(digestSink.events.length == 1);
-  return digestSink.events.first;
-}
+  @override
+  AssetId maybeHide(AssetId id, String rootPackage) {
+    if (id.path.startsWith(generatedOutputDirectory) ||
+        id.path.startsWith(cacheDir)) {
+      return id;
+    }
+    if (!contains(id)) {
+      return id;
+    }
+    final assetNode = get(id)!;
+    if (assetNode.type == NodeType.generated &&
+        assetNode.generatedNodeConfiguration!.isHidden) {
+      return AssetId(
+        rootPackage,
+        '$generatedOutputDirectory/${id.package}/${id.path}',
+      );
+    }
+    return id;
+  }
 
-Digest computeBuilderOptionsDigest(BuilderOptions options) =>
-    md5.convert(utf8.encode(json.encode(options.config)));
-
-AssetId builderOptionsIdForAction(BuildAction action, int actionNum) {
-  if (action is InBuildPhase) {
-    return AssetId(action.package, 'Phase$actionNum.builderOptions');
-  } else if (action is PostBuildAction) {
-    return AssetId(action.package, 'PostPhase$actionNum.builderOptions');
-  } else {
-    throw StateError('Unsupported action type $action');
+  /// Deletes outputs that were written to the source tree.
+  ///
+  /// Returns the assets that were deleted.
+  Future<Iterable<AssetId>> deleteOutputs(
+    PackageGraph packageGraph,
+    RunnerAssetWriter writer,
+  ) async {
+    var deletedSources = <AssetId>[];
+    // Delete all the non-hidden outputs.
+    for (final id in outputs) {
+      var node = get(id)!;
+      final nodeConfiguration = node.generatedNodeConfiguration!;
+      if (node.wasOutput && !nodeConfiguration.isHidden) {
+        var idToDelete = id;
+        // If the package no longer exists, then the user must have
+        // renamed the root package.
+        //
+        // In that case we change `idToDelete` to be in the root package.
+        if (packageGraph[id.package] == null) {
+          idToDelete = AssetId(packageGraph.root.name, id.path);
+        }
+        deletedSources.add(idToDelete);
+        await writer.delete(idToDelete);
+      }
+    }
+    return deletedSources;
   }
 }
 
-Set<AssetId> placeholderIdsFor(PackageGraph packageGraph) =>
-    Set<AssetId>.from(packageGraph.allPackages.keys.expand((package) => [
-          AssetId(package, r'lib/$lib$'),
-          AssetId(package, r'test/$test$'),
-          AssetId(package, r'web/$web$'),
-          AssetId(package, r'$package$'),
-        ]));
+Set<AssetId> placeholderIdsFor(PackageGraph packageGraph) => Set<AssetId>.from(
+  packageGraph.allPackages.keys.expand(
+    (package) => [
+      AssetId(package, r'lib/$lib$'),
+      AssetId(package, r'test/$test$'),
+      AssetId(package, r'web/$web$'),
+      AssetId(package, r'$package$'),
+    ],
+  ),
+);

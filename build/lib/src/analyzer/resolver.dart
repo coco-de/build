@@ -1,6 +1,8 @@
 // Copyright (c) 2016, the Dart project authors.  Please see the AUTHORS file
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
+// ignore_for_file: deprecated_member_use
+
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/session.dart';
 import 'package:analyzer/dart/ast/ast.dart';
@@ -49,16 +51,20 @@ abstract class Resolver {
   ///
   /// This is a much cheaper api compared to [libraryFor], because it will only
   /// parse a single file and does not give you a resolved element model.
-  Future<CompilationUnit> compilationUnitFor(AssetId assetId,
-      {bool allowSyntaxErrors = false});
+  Future<CompilationUnit> compilationUnitFor(
+    AssetId assetId, {
+    bool allowSyntaxErrors = false,
+  });
 
   /// Returns a resolved library representing the file defined in [assetId].
   ///
   /// * Throws [NonLibraryAssetException] if [assetId] is not a Dart library.
   /// * If the [assetId] has syntax errors, and [allowSyntaxErrors] is set to
   ///   `false` (the default), throws a [SyntaxErrorInAssetException].
-  Future<LibraryElement> libraryFor(AssetId assetId,
-      {bool allowSyntaxErrors = false});
+  Future<LibraryElement> libraryFor(
+    AssetId assetId, {
+    bool allowSyntaxErrors = false,
+  });
 
   /// Returns the first resolved library identified by [libraryName].
   ///
@@ -111,7 +117,8 @@ class NonLibraryAssetException implements Exception {
   const NonLibraryAssetException(this.assetId);
 
   @override
-  String toString() => 'Asset [$assetId] is not a Dart library. '
+  String toString() =>
+      'Asset [$assetId] is not a Dart library. '
       'It may be a part file or a file without Dart source code.';
 }
 
@@ -134,7 +141,7 @@ class SyntaxErrorInAssetException implements Exception {
   final List<AnalysisResultWithErrors> filesWithErrors;
 
   SyntaxErrorInAssetException(this.assetId, this.filesWithErrors)
-      : assert(filesWithErrors.isNotEmpty);
+    : assert(filesWithErrors.isNotEmpty);
 
   /// The errors reported by the parser when trying to resolve the [assetId].
   ///
@@ -162,10 +169,13 @@ class SyntaxErrorInAssetException implements Exception {
 
   @override
   String toString() {
-    final buffer = StringBuffer()
-      ..writeln('This builder requires Dart inputs without syntax errors.')
-      ..writeln('However, ${assetId.uri} (or an existing part) contains the '
-          'following errors.');
+    final buffer =
+        StringBuffer()
+          ..writeln('This builder requires Dart inputs without syntax errors.')
+          ..writeln(
+            'However, ${assetId.uri} (or an existing part) contains the '
+            'following errors.',
+          );
 
     // Avoid generating too much output for syntax errors. The user likely has
     // an editor that shows them anyway.
@@ -181,8 +191,9 @@ class SyntaxErrorInAssetException implements Exception {
 
       // Output messages like "foo.dart:3:4: Expected a semicolon here."
       buffer.writeln(
-          '$sourceName:${position.lineNumber}:${position.columnNumber}: '
-          '${error.message}');
+        '$sourceName:${position.lineNumber}:${position.columnNumber}: '
+        '${error.message}',
+      );
     }
 
     final additionalErrors = entries.length - _maxErrorsInToString;

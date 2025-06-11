@@ -4,29 +4,29 @@
 
 import 'dart:async';
 
-// ignore: implementation_imports
-import 'package:build_runner_core/src/asset/reader.dart';
-// ignore: implementation_imports
-import 'package:build_runner_core/src/asset/writer.dart';
-// ignore: implementation_imports
-import 'package:build_runner_core/src/environment/build_environment.dart';
+import 'package:build/build.dart';
+import 'package:build_runner_core/build_runner_core.dart';
 import 'package:logging/logging.dart';
 
 import 'common.dart';
 
 /// A [BuildEnvironment] for testing.
 ///
-/// Defaults to using an [InMemoryRunnerAssetReader] and
-/// [InMemoryRunnerAssetWriter].
+/// Defaults to an empty [TestReaderWriter].
 ///
 /// To handle prompts you must first set `nextPromptResponse`. Alternatively
 /// you can set `throwOnPrompt` to `true` to emulate a
 /// [NonInteractiveBuildException].
-class TestBuildEnvironment extends BuildEnvironment {
+class TestBuildEnvironment implements BuildEnvironment {
+  final TestReaderWriter _readerWriter;
+
+  TestReaderWriter get readerWriter => _readerWriter;
+
   @override
-  final RunnerAssetReader reader;
+  TestReaderWriter get reader => _readerWriter;
+
   @override
-  final RunnerAssetWriter writer;
+  TestReaderWriter get writer => _readerWriter;
 
   /// If true, this will throw a [NonInteractiveBuildException] for all calls to
   /// [prompt].
@@ -43,12 +43,10 @@ class TestBuildEnvironment extends BuildEnvironment {
 
   int? _nextPromptResponse;
 
-  TestBuildEnvironment(
-      {RunnerAssetReader? reader,
-      RunnerAssetWriter? writer,
-      this.throwOnPrompt = false})
-      : reader = reader ?? InMemoryRunnerAssetReader(),
-        writer = writer ?? InMemoryRunnerAssetWriter();
+  TestBuildEnvironment({
+    TestReaderWriter? readerWriter,
+    this.throwOnPrompt = false,
+  }) : _readerWriter = readerWriter ?? TestReaderWriter();
 
   @override
   void onLog(LogRecord record) => logRecords.add(record);
@@ -67,4 +65,25 @@ class TestBuildEnvironment extends BuildEnvironment {
     assert(_nextPromptResponse != null);
     return Future.value(_nextPromptResponse);
   }
+
+  @override
+  BuildEnvironment copyWith({
+    void Function(LogRecord)? onLogOverride,
+    RunnerAssetWriter? writer,
+    AssetReader? reader,
+  }) => TestBuildEnvironment(
+    readerWriter:
+        (writer as TestReaderWriter?) ??
+        (reader as TestReaderWriter?) ??
+        _readerWriter,
+    throwOnPrompt: throwOnPrompt,
+  );
+
+  @override
+  Future<BuildResult> finalizeBuild(
+    BuildResult buildResult,
+    FinalizedAssetsView finalizedAssetsView,
+    AssetReader reader,
+    Set<BuildDirectory> buildDirs,
+  ) => Future.value(buildResult);
 }

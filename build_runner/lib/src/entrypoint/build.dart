@@ -28,7 +28,9 @@ class BuildCommand extends BuildRunnerCommand {
   Future<int> run() {
     var options = readOptions();
     return withEnabledExperiments(
-        () => _run(options), options.enableExperiments);
+      () => _run(options),
+      options.enableExperiments,
+    );
   }
 
   Future<int> _run(SharedOptions options) async {

@@ -8,27 +8,22 @@ import 'dart:convert';
 import 'package:build/build.dart';
 import 'package:crypto/crypto.dart';
 
-export 'package:build_test/build_test.dart'
-    hide InMemoryAssetReader, InMemoryAssetWriter;
+export 'package:build_test/build_test.dart';
 
 export 'assets.dart';
 export 'builders.dart';
 export 'descriptors.dart';
-export 'in_memory_reader.dart';
-export 'in_memory_writer.dart';
 export 'matchers.dart';
 export 'package_graphs.dart';
 export 'sdk.dart';
 export 'test_phases.dart';
 
 Digest computeDigest(AssetId id, String contents) {
-  // Special handling for `$$` assets, these are generated under the .dart_tool
-  // dir and unfortunately that leaks into the digest computations.
-  if (id.package.startsWith(r'$$')) {
-    var package = id.package.substring(2);
-    id = AssetId(package, '.dart_tool/build/generated/$package/${id.path}');
-  }
-  return md5.convert([...utf8.encode(contents), ...id.toString().codeUnits]);
+  // Tests use `$$` at the start of an ID to signal "generated", remove it.
+  var idString = id.toString();
+  if (idString.startsWith(r'$$')) idString = idString.substring(2);
+
+  return md5.convert([...utf8.encode(contents), ...idString.codeUnits]);
 }
 
 class PlaceholderBuilder extends Builder {
@@ -36,26 +31,34 @@ class PlaceholderBuilder extends Builder {
   final Map<String, String> outputExtensionsToContent;
 
   @override
-  Map<String, List<String>> get buildExtensions =>
-      {inputExtension: outputExtensionsToContent.keys.toList()};
+  Map<String, List<String>> get buildExtensions => {
+    inputExtension: outputExtensionsToContent.keys.toList(),
+  };
 
-  PlaceholderBuilder(this.outputExtensionsToContent,
-      {this.inputExtension = r'$lib$'});
+  PlaceholderBuilder(
+    this.outputExtensionsToContent, {
+    this.inputExtension = r'$lib$',
+  });
 
   @override
   Future build(BuildStep buildStep) async {
     outputExtensionsToContent.forEach((extension, content) {
       buildStep.writeAsString(
-          _outputId(buildStep.inputId, inputExtension, extension), content);
+        _outputId(buildStep.inputId, inputExtension, extension),
+        content,
+      );
     });
   }
 }
 
 AssetId _outputId(
-    AssetId inputId, String inputExtension, String outputExtension) {
+  AssetId inputId,
+  String inputExtension,
+  String outputExtension,
+) {
   assert(inputId.path.endsWith(inputExtension));
   var newPath =
       inputId.path.substring(0, inputId.path.length - inputExtension.length) +
-          outputExtension;
+      outputExtension;
   return AssetId(inputId.package, newPath);
 }

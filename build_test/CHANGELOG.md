@@ -1,4 +1,40 @@
-## 2.2.4-wip
+## 3.0.0-wip
+
+- Bump the min SDK to 3.7.0.
+- Use `build_runner_core` 9.0.0.
+- `resolveSources` and `testBuilder` now do a full `build_runner` build, with
+  configuration as much as possible based on the some parameters.
+- Add `testBuilders` to run a test build with multiple builders.
+- Add `optionalBuilder` to `testBuilders` to have some builders be optional.
+- Add `testingBuilderConfig` to `testBuilders` to control builder config
+  override.
+- Add `resolvers` parameter to `testBuild` and `testBuilders`.
+- Add `readerWriter` and `enableLowResourceMode` parameters to `testBuild`
+  and `testBuilders`.
+- Breaking change: removed `tearDown` parameter to `resolveSources` for
+  keeping resolvers across multiple tests.
+- Breaking change: tests must use new `TestReaderWriter` instead of
+  `InMemoryAssetReader` and `InMemoryAssetWriter`.
+- Breaking change: `testBuilder` no longer accepts a `reader` and a `writer`.
+  Instead it returns a `TestBuilderResult` with the `TestReaderWriter`
+  that was used.
+- Breaking change: `resolveSources` no longer automatically reads non-input
+  files from the filesystem; specify explicitly which non-input files the
+  test should read in `nonInputsToReadFromFilesystem`.
+- Breaking change: remove `MultiAssetReader`. Load the source into one
+  `TestReaderWriter` instead.
+- Breaking change: `TestReaderWriter.assetsRead` does not take into account
+  details of the build, it's just what was actually read. Use
+  `TestReaderWriter.inputsTracked` for what was recorded as an input. Note that
+  resolver entrypoints are now tracked separately from inputs, see
+  `TestReaderWriter.resolverEntrypointsTracked`.
+- Breaking change: Remove `StubAssetReader`. Use `TestReaderWriter` instead.
+- `TestReaderWriter` writes and deletes are notified to `FakeWatcher`.
+- `TestReaderWriter` tracks `assetsWritten`.
+- Support checks on reader state after a build action in `resolveSources`.
+- Start using `package:build/src/internal.dart`.
+- Refactor `BuildCacheReader` to `BuildCacheAssetPathProvider`.
+- Refactor `FileBasedAssetReader` and `FileBasedAssetWriter` to `ReaderWriter`.
 
 ## 2.2.3
 

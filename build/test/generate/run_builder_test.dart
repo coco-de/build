@@ -12,26 +12,26 @@ import 'package:package_config/package_config_types.dart';
 import 'package:test/test.dart';
 
 void main() {
-  late InMemoryAssetWriter writer;
-  late InMemoryAssetReader reader;
+  late TestReaderWriter readerWriter;
   final primary = makeAssetId('a|web/primary.txt');
-  final inputs = {
-    primary: 'foo',
-  };
+  final inputs = {primary: 'foo'};
   late Resource resource;
   late bool resourceDisposed;
   late Builder builder;
 
   setUp(() async {
     resourceDisposed = false;
-    resource = Resource(() => 0, dispose: (_) {
-      resourceDisposed = true;
-    });
+    resource = Resource(
+      () => 0,
+      dispose: (_) {
+        resourceDisposed = true;
+      },
+    );
     builder = TestBuilder(
-        extraWork: (buildStep, __) => buildStep.fetchResource(resource));
-    writer = InMemoryAssetWriter();
-    reader = InMemoryAssetReader.shareAssetCache(writer.assets);
-    addAssets(inputs, writer);
+      extraWork: (buildStep, _) => buildStep.fetchResource(resource),
+    );
+    readerWriter = TestReaderWriter();
+    addAssets(inputs, readerWriter);
   });
 
   group('Given a ResourceManager', () {
@@ -39,8 +39,14 @@ void main() {
 
     setUp(() async {
       resourceManager = TrackingResourceManager();
-      await runBuilder(builder, inputs.keys, reader, writer, null,
-          resourceManager: resourceManager);
+      await runBuilder(
+        builder,
+        inputs.keys,
+        readerWriter,
+        readerWriter,
+        null,
+        resourceManager: resourceManager,
+      );
     });
 
     tearDown(() async {
@@ -63,7 +69,7 @@ void main() {
 
   group('With a default ResourceManager', () {
     setUp(() async {
-      await runBuilder(builder, inputs.keys, reader, writer, null);
+      await runBuilder(builder, inputs.keys, readerWriter, readerWriter, null);
     });
 
     test('disposes the default resource manager', () async {
@@ -73,40 +79,49 @@ void main() {
 
   group('can resolve package config', () {
     setUp(() {
-      writer.assets[makeAssetId('build|lib/foo.txt')] = [1, 2, 3];
+      readerWriter.testing.writeBytes(makeAssetId('build|lib/foo.txt'), [
+        1,
+        2,
+        3,
+      ]);
 
-      builder = TestBuilder(extraWork: (buildStep, __) async {
-        final config = await buildStep.packageConfig;
+      builder = TestBuilder(
+        extraWork: (buildStep, _) async {
+          final config = await buildStep.packageConfig;
 
-        final buildPackage =
-            config.packages.singleWhere((p) => p.name == 'build');
-        expect(buildPackage.root, Uri.parse('asset:build/'));
-        expect(buildPackage.packageUriRoot, Uri.parse('asset:build/lib/'));
-        expect(buildPackage.languageVersion, LanguageVersion(3, 6));
+          final buildPackage = config.packages.singleWhere(
+            (p) => p.name == 'build',
+          );
+          expect(buildPackage.root, Uri.parse('asset:build/'));
+          expect(buildPackage.packageUriRoot, Uri.parse('asset:build/lib/'));
+          expect(buildPackage.languageVersion, LanguageVersion(3, 7));
 
-        final resolvedBuildUri =
-            config.resolve(Uri.parse('package:build/foo.txt'))!;
-        expect(
-            await buildStep.canRead(AssetId.resolve(resolvedBuildUri)), isTrue);
-      });
+          final resolvedBuildUri =
+              config.resolve(Uri.parse('package:build/foo.txt'))!;
+          expect(
+            await buildStep.canRead(AssetId.resolve(resolvedBuildUri)),
+            isTrue,
+          );
+        },
+      );
     });
 
     test('from default', () async {
-      await runBuilder(builder, inputs.keys, reader, writer, null);
+      await runBuilder(builder, inputs.keys, readerWriter, readerWriter, null);
     });
 
     test('when provided', () async {
       await runBuilder(
         builder,
         inputs.keys,
-        reader,
-        writer,
+        readerWriter,
+        readerWriter,
         null,
         packageConfig: PackageConfig([
           Package(
             'build',
             Uri.file('/foo/bar/'),
-            languageVersion: LanguageVersion(3, 6),
+            languageVersion: LanguageVersion(3, 7),
           ),
         ]),
       );

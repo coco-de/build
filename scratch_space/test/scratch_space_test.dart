@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:build/build.dart';
 import 'package:build_test/build_test.dart';
@@ -17,21 +18,26 @@ import 'package:test/test.dart';
 void main() {
   group('ScratchSpace', () {
     late ScratchSpace scratchSpace;
-    late InMemoryAssetReader assetReader;
+    late TestReaderWriter readerWriter;
 
     var allAssets = [
       'dep|lib/dep.dart',
       'myapp|lib/myapp.dart',
       'myapp|web/main.dart',
-    ].fold<Map<AssetId, List<int>>>({}, (assets, serializedId) {
-      assets[AssetId.parse(serializedId)] = serializedId.codeUnits;
+    ].fold<Map<AssetId, Uint8List>>({}, (assets, serializedId) {
+      assets[AssetId.parse(serializedId)] = Uint8List.fromList(
+        serializedId.codeUnits,
+      );
       return assets;
     });
 
     setUp(() async {
       scratchSpace = ScratchSpace();
-      assetReader = InMemoryAssetReader(sourceAssets: allAssets);
-      await scratchSpace.ensureAssets(allAssets.keys, assetReader);
+      readerWriter = TestReaderWriter();
+      for (final asset in allAssets.entries) {
+        readerWriter.testing.writeBytes(asset.key, asset.value);
+      }
+      await scratchSpace.ensureAssets(allAssets.keys, readerWriter);
     });
 
     tearDown(() async {
@@ -40,9 +46,12 @@ void main() {
 
     test('Creates a directory under the system temp directory', () async {
       expect(
-          p.isWithin(Directory.systemTemp.resolveSymbolicLinksSync(),
-              scratchSpace.tempDir.resolveSymbolicLinksSync()),
-          isTrue);
+        p.isWithin(
+          Directory.systemTemp.resolveSymbolicLinksSync(),
+          scratchSpace.tempDir.resolveSymbolicLinksSync(),
+        ),
+        isTrue,
+      );
     });
 
     test('Can read files from a ScratchSpace', () async {
@@ -57,11 +66,16 @@ void main() {
       for (var id in allAssets.keys) {
         var file = scratchSpace.fileFor(id);
 
-        var relativeFilePath =
-            p.relative(file.path, from: scratchSpace.tempDir.path);
+        var relativeFilePath = p.relative(
+          file.path,
+          from: scratchSpace.tempDir.path,
+        );
         if (topLevelDir(id.path) == 'lib') {
-          var expectedPackagesPath =
-              p.join('packages', id.package, p.relative(id.path, from: 'lib'));
+          var expectedPackagesPath = p.join(
+            'packages',
+            id.package,
+            p.relative(id.path, from: 'lib'),
+          );
           expect(relativeFilePath, equals(expectedPackagesPath));
         } else {
           expect(relativeFilePath, equals(p.normalize(id.path)));
@@ -76,10 +90,10 @@ void main() {
       var outputContent = 'test!';
       await outputFile.writeAsString(outputContent);
 
-      var writer = InMemoryAssetWriter();
+      var writer = TestReaderWriter();
       await scratchSpace.copyOutput(outputId, writer);
 
-      expect(writer.assets[outputId], decodedMatches(outputContent));
+      expect(writer.testing.readString(outputId), outputContent);
     });
 
     test('Can delete a ScratchSpace', () async {
@@ -93,8 +107,10 @@ void main() {
 
     test('Can\'t use a ScratchSpace after deleting it', () async {
       unawaited(scratchSpace.delete());
-      expect(() => scratchSpace.ensureAssets(allAssets.keys, assetReader),
-          throwsStateError);
+      expect(
+        () => scratchSpace.ensureAssets(allAssets.keys, readerWriter),
+        throwsStateError,
+      );
     });
 
     test('Can\'t delete a ScratchSpace twice', () async {
@@ -103,29 +119,39 @@ void main() {
     });
 
     group('regression tests', () {
-      test('doesn\'t deadlock when the reader also uses a scratchspace',
-          () async {
-        // Recursively "reads" from the previous numeric file until it gets
-        // to 0, using the scratchSpace.
-        var reader = RecursiveScratchSpaceAssetReader(scratchSpace);
-        var first = AssetId('a', 'lib/100');
-        expect(await reader.readAsBytes(first), utf8.encode('0'));
-      });
+      test(
+        'doesn\'t deadlock when the reader also uses a scratchspace',
+        () async {
+          // Recursively "reads" from the previous numeric file until it gets
+          // to 0, using the scratchSpace.
+          var reader = RecursiveScratchSpaceAssetReader(scratchSpace);
+          var first = AssetId('a', 'lib/100');
+          expect(await reader.readAsBytes(first), utf8.encode('0'));
+        },
+      );
     });
   });
 
   test('canonicalUriFor', () {
-    expect(canonicalUriFor(AssetId('a', 'lib/a.dart')),
-        equals('package:a/a.dart'));
-    expect(canonicalUriFor(AssetId('a', 'lib/src/a.dart')),
-        equals('package:a/src/a.dart'));
+    expect(
+      canonicalUriFor(AssetId('a', 'lib/a.dart')),
+      equals('package:a/a.dart'),
+    );
+    expect(
+      canonicalUriFor(AssetId('a', 'lib/src/a.dart')),
+      equals('package:a/src/a.dart'),
+    );
     expect(canonicalUriFor(AssetId('a', 'web/a.dart')), equals('web/a.dart'));
     expect(canonicalUriFor(AssetId('a', 'a.dart')), equals('a.dart'));
 
-    expect(() => canonicalUriFor(AssetId('a', 'lib/../../a.dart')),
-        throwsArgumentError);
-    expect(() => canonicalUriFor(AssetId('a', 'web/../../a.dart')),
-        throwsArgumentError);
+    expect(
+      () => canonicalUriFor(AssetId('a', 'lib/../../a.dart')),
+      throwsArgumentError,
+    );
+    expect(
+      () => canonicalUriFor(AssetId('a', 'web/../../a.dart')),
+      throwsArgumentError,
+    );
   });
 }
 
